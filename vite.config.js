@@ -11,13 +11,23 @@ export default defineConfig(({ mode }) => {
   base,
   build: {
     modulePreload: false,
+    cssCodeSplit: false,
+    rollupOptions: {
+      output: {
+        format: 'iife',
+        inlineDynamicImports: true,
+        entryFileNames: 'assets/app-[hash].js',
+      },
+    },
   },
   plugins: [
     react(),
     {
-      name: 'strip-crossorigin-for-github-pages',
+      name: 'github-pages-html',
       transformIndexHtml(html) {
-        return html.replace(/\s+crossorigin/g, '')
+        return html
+          .replace(/\s+crossorigin/g, '')
+          .replace(/<script type="module"/g, '<script defer')
       },
     },
   ],
