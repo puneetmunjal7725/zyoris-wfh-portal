@@ -6,6 +6,7 @@ create table if not exists employees (
   name text not null,
   role text not null default 'Engineer',
   password text not null,
+  email text not null default '',
   address text not null default '',
   compensation text not null default '',
   compensation_type text not null default 'Salary',

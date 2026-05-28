@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePortalDb } from '../state/portalDb.js'
 import { writeSession } from '../state/storage.js'
+import { payTypeLabel } from '../utils/employee.js'
 import { WfhActivityLog } from '../ui/WfhActivityLog.jsx'
 
 export function EmployeeProfileView({ session }) {
@@ -20,7 +21,7 @@ export function EmployeeProfileView({ session }) {
     )
   }
 
-  const payLabel = employee.compensationType === 'Stipend' ? 'Stipend' : 'Salary'
+  const payLabel = payTypeLabel(employee.compensationType)
 
   return (
     <div className="container">
@@ -43,6 +44,10 @@ export function EmployeeProfileView({ session }) {
                 <div>
                   <dt>Employee ID</dt>
                   <dd>{employee.id}</dd>
+                </div>
+                <div>
+                  <dt>Work email</dt>
+                  <dd>{employee.email?.trim() || '—'}</dd>
                 </div>
                 <div>
                   <dt>Address</dt>

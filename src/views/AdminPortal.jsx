@@ -18,6 +18,7 @@ import { usePortalDb } from '../state/portalDb.js'
 import { ScoreBadge } from '../ui/ScoreBadge.jsx'
 import { EmployeeProfileEditor } from '../ui/EmployeeProfileEditor.jsx'
 import { fmtDate, fmtTime } from '../utils/format.js'
+import { isValidEmail } from '../utils/employee.js'
 
 function AdminNav() {
   const navigate = useNavigate()
@@ -215,6 +216,7 @@ function Employees() {
   const { db, version } = usePortalDb()
   const [id, setId] = useState('')
   const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
   const [role, setRole] = useState('Engineer')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -239,9 +241,22 @@ function Employees() {
       setError('Employee ID already exists.')
       return
     }
-    addEmployee({ id: nextId, name: name.trim(), role, password })
+    const nextEmail = email.trim()
+    if (!isValidEmail(nextEmail)) {
+      setError('Enter a valid work email.')
+      return
+    }
+    if (
+      nextEmail &&
+      db.employees.some((e) => e.email?.toLowerCase() === nextEmail.toLowerCase())
+    ) {
+      setError('This email is already used by another employee.')
+      return
+    }
+    addEmployee({ id: nextId, name: name.trim(), email: nextEmail, role, password })
     setId('')
     setName('')
+    setEmail('')
     setPassword('')
   }
 
@@ -265,6 +280,17 @@ function Employees() {
             <div>
               <div className="label">Name</div>
               <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
+            </div>
+            <div>
+              <div className="label">Work email</div>
+              <input
+                className="input"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@zyoris.com"
+                autoComplete="email"
+              />
             </div>
             <div>
               <div className="label">Role</div>
@@ -316,6 +342,9 @@ function Employees() {
                   <td>
                     <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>{e.name}</div>
                     <div style={{ fontSize: 12, color: 'var(--text)' }}>{e.id}</div>
+                    {e.email?.trim() ? (
+                      <div style={{ fontSize: 12, color: 'var(--text)' }}>{e.email}</div>
+                    ) : null}
                   </td>
                   <td>{e.role}</td>
                   <td>

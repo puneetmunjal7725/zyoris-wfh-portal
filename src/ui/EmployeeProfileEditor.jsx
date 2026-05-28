@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { updateEmployee } from '../state/storage.js'
+import { ensureDbSeeded, updateEmployee } from '../state/storage.js'
+import { isValidEmail, PAY_TYPES } from '../utils/employee.js'
 
 export function EmployeeProfileEditor({ employee, onSaved, onCancel }) {
+  const [email, setEmail] = useState(employee.email || '')
   const [address, setAddress] = useState(employee.address || '')
   const [compensation, setCompensation] = useState(employee.compensation || '')
   const [compensationType, setCompensationType] = useState(employee.compensationType || 'Salary')
@@ -27,8 +29,24 @@ export function EmployeeProfileEditor({ employee, onSaved, onCancel }) {
 
   function save() {
     setError('')
+    const nextEmail = email.trim()
+    if (!isValidEmail(nextEmail)) {
+      setError('Enter a valid email address.')
+      return
+    }
+    const db = ensureDbSeeded()
+    if (
+      nextEmail &&
+      db.employees.some(
+        (e) => e.id.toUpperCase() !== employee.id.toUpperCase() && e.email?.toLowerCase() === nextEmail.toLowerCase(),
+      )
+    ) {
+      setError('This email is already used by another employee.')
+      return
+    }
     updateEmployee(employee.id, (e) => ({
       ...e,
+      email: nextEmail,
       address: address.trim(),
       compensation: compensation.trim(),
       compensationType,
@@ -60,6 +78,17 @@ export function EmployeeProfileEditor({ employee, onSaved, onCancel }) {
           </div>
           <div className="grid2" style={{ flex: 1 }}>
             <div style={{ gridColumn: '1 / -1' }}>
+              <div className="label">Work email</div>
+              <input
+                className="input"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@company.com"
+                autoComplete="email"
+              />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
               <div className="label">Address</div>
               <textarea
                 className="textarea"
@@ -75,8 +104,9 @@ export function EmployeeProfileEditor({ employee, onSaved, onCancel }) {
                 value={compensationType}
                 onChange={(e) => setCompensationType(e.target.value)}
               >
-                <option>Salary</option>
-                <option>Stipend</option>
+                {PAY_TYPES.map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -85,7 +115,9 @@ export function EmployeeProfileEditor({ employee, onSaved, onCancel }) {
                 className="input"
                 value={compensation}
                 onChange={(e) => setCompensation(e.target.value)}
-                placeholder="e.g. ₹25,000 / month"
+                placeholder={
+                  compensationType === 'Unpaid' ? 'e.g. Internship / volunteer' : 'e.g. ₹25,000 / month'
+                }
               />
             </div>
           </div>

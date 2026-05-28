@@ -226,6 +226,7 @@ export function updateLeave(leaveId, updater) {
 
 export function defaultEmployeeFields(overrides = {}) {
   return {
+    email: '',
     address: '',
     compensation: '',
     compensationType: 'Salary',
