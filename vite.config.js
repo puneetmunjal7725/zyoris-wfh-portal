@@ -9,7 +9,18 @@ export default defineConfig(({ mode }) => {
 
   return {
   base,
-  plugins: [react()],
+  build: {
+    modulePreload: false,
+  },
+  plugins: [
+    react(),
+    {
+      name: 'strip-crossorigin-for-github-pages',
+      transformIndexHtml(html) {
+        return html.replace(/\s+crossorigin/g, '')
+      },
+    },
+  ],
   server: {
     watch: {
       ignored: ['**/node_modules/**', '**/dist/**'],
