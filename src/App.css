@@ -359,3 +359,11 @@
   background: rgba(41, 121, 255, 0.18);
   color: #fff;
 }
+
+.logDetail {
+  color: var(--text-h);
+  white-space: pre-wrap;
+  max-width: 420px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}

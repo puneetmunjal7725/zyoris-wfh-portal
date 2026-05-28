@@ -11,12 +11,15 @@ import {
   writeDb,
   writeSession,
 } from '../state/storage.js'
+import { appendAttendanceEvent } from '../state/activityLog.js'
 import { ScoreBadge } from '../ui/ScoreBadge.jsx'
+import { WfhActivityLog } from '../ui/WfhActivityLog.jsx'
 
 const DEMO_CHECK_MS_MIN = 3 * 60 * 1000
 const DEMO_CHECK_MS_MAX = 5 * 60 * 1000
 const PROD_CHECK_MS_MIN = 45 * 60 * 1000
 const PROD_CHECK_MS_MAX = 90 * 60 * 1000
+const FIRST_CHECK_MS = 2 * 60 * 1000
 const USE_DEMO_TIMINGS = false
 
 function randBetween(min, max) {
@@ -137,10 +140,10 @@ function AttendanceView({ session }) {
     syncCurrent()
   }, [getTodayRecord])
 
-  function scheduleNextCheck() {
+  function scheduleNextCheck({ first = false } = {}) {
     const min = USE_DEMO_TIMINGS ? DEMO_CHECK_MS_MIN : PROD_CHECK_MS_MIN
     const max = USE_DEMO_TIMINGS ? DEMO_CHECK_MS_MAX : PROD_CHECK_MS_MAX
-    const delay = randBetween(min, max)
+    const delay = first ? FIRST_CHECK_MS : randBetween(min, max)
     window.clearTimeout(nextCheckTimeoutRef.current)
     nextCheckTimeoutRef.current = window.setTimeout(() => {
       openCheck()
@@ -155,10 +158,18 @@ function AttendanceView({ session }) {
     setCheckOpen(true)
 
     // Add check entry immediately; will be marked responded on submit
+    const at = nowIso()
     updateAttendance(session.id, date, (a) => {
       const checks = Array.isArray(a.checks) ? a.checks.slice() : []
-      checks.push({ time: nowIso(), responded: false, update: '' })
-      return { ...a, checks }
+      checks.push({ time: at, responded: false, update: '' })
+      let next = { ...a, checks }
+      next = appendAttendanceEvent(next, {
+        type: 'WFH_CHECK',
+        time: at,
+        status: 'Pending',
+        detail: 'Waiting for your work update',
+      })
+      return next
     })
     syncCurrent()
 
@@ -166,11 +177,38 @@ function AttendanceView({ session }) {
     checkTimerRef.current = window.setInterval(() => {
       setCheckSeconds((s) => {
         if (s <= 1) {
-          // missed (no response in time)
           setCheckOpen(false)
           window.clearInterval(checkTimerRef.current)
           checkTimerRef.current = null
           checkActiveRef.current = false
+          updateAttendance(session.id, date, (a) => {
+            const checks = Array.isArray(a.checks) ? a.checks.slice() : []
+            let missedTime = null
+            for (let i = checks.length - 1; i >= 0; i--) {
+              if (!checks[i].responded && !checks[i].update) {
+                missedTime = checks[i].time
+                break
+              }
+            }
+            if (!missedTime) return a
+            let next = { ...a, checks }
+            const events = Array.isArray(next.events) ? next.events.slice() : []
+            const idx = events.findIndex(
+              (e) => e.type === 'WFH_CHECK' && e.time === missedTime && e.status === 'Pending',
+            )
+            if (idx >= 0) {
+              events[idx] = { ...events[idx], status: 'Missed', detail: 'No response in time' }
+              next = { ...next, events }
+            } else {
+              next = appendAttendanceEvent(next, {
+                type: 'WFH_CHECK',
+                time: missedTime,
+                status: 'Missed',
+                detail: 'No response in time',
+              })
+            }
+            return next
+          })
           if (shiftActiveRef.current) scheduleNextCheck()
           syncCurrent()
           return 0
@@ -197,7 +235,7 @@ function AttendanceView({ session }) {
       return
     }
     shiftActiveRef.current = true
-    scheduleNextCheck()
+    scheduleNextCheck({ first: true })
     return () => {
       window.clearTimeout(nextCheckTimeoutRef.current)
       window.clearInterval(checkTimerRef.current)
@@ -211,13 +249,35 @@ function AttendanceView({ session }) {
 
     const updated = updateAttendance(session.id, date, (a) => {
       const checks = Array.isArray(a.checks) ? a.checks.slice() : []
+      let matchedTime = nowIso()
       for (let i = checks.length - 1; i >= 0; i--) {
         if (!checks[i].responded && !checks[i].update) {
           checks[i] = { ...checks[i], responded: true, update: txt }
+          matchedTime = checks[i].time
           break
         }
       }
-      return { ...a, checks }
+      let next = { ...a, checks }
+      const events = Array.isArray(next.events) ? next.events.slice() : []
+      const pendingIdx = events.findIndex(
+        (e) => e.type === 'WFH_CHECK' && e.time === matchedTime && e.status === 'Pending',
+      )
+      if (pendingIdx >= 0) {
+        events[pendingIdx] = {
+          ...events[pendingIdx],
+          status: 'Responded',
+          detail: txt,
+        }
+        next = { ...next, events }
+      } else {
+        next = appendAttendanceEvent(next, {
+          type: 'WFH_CHECK',
+          time: matchedTime,
+          status: 'Responded',
+          detail: txt,
+        })
+      }
+      return next
     })
 
     if (!updated) return
@@ -233,7 +293,16 @@ function AttendanceView({ session }) {
       setError('You are already punched in.')
       return
     }
-    const next = updateAttendance(session.id, date, (a) => ({ ...a, punchIn: nowIso(), punchOut: null }))
+    const at = nowIso()
+    const next = updateAttendance(session.id, date, (a) => {
+      let nextRecord = { ...a, punchIn: at, punchOut: null }
+      return appendAttendanceEvent(nextRecord, {
+        type: 'PUNCH_IN',
+        time: at,
+        status: 'Done',
+        detail: 'Work session started',
+      })
+    })
     if (!next) {
       // if record wasn't found (shouldn't happen), force insert by rewriting db from upsert
       writeDb(db)
@@ -255,13 +324,28 @@ function AttendanceView({ session }) {
     checkActiveRef.current = false
     shiftActiveRef.current = false
     setCheckOpen(false)
-    const next = updateAttendance(session.id, date, (a) => ({
-      ...a,
-      punchOut: nowIso(),
-      tasks,
-      plan: punchOutPlan.trim(),
-      blocker: punchOutBlocker.trim(),
-    }))
+    const at = nowIso()
+    const plan = punchOutPlan.trim()
+    const blocker = punchOutBlocker.trim()
+    const detailParts = [`Tasks completed: ${tasks}`]
+    if (plan) detailParts.push(`Plan for tomorrow: ${plan}`)
+    if (blocker) detailParts.push(`Blockers: ${blocker}`)
+
+    const next = updateAttendance(session.id, date, (a) => {
+      let nextRecord = {
+        ...a,
+        punchOut: at,
+        tasks,
+        plan,
+        blocker,
+      }
+      return appendAttendanceEvent(nextRecord, {
+        type: 'PUNCH_OUT',
+        time: at,
+        status: 'Done',
+        detail: detailParts.join('\n'),
+      })
+    })
     if (!next) return
     syncCurrent()
   }
@@ -365,43 +449,7 @@ function AttendanceView({ session }) {
         </div>
       </div>
 
-      <div className="card">
-        <div className="cardHeader">
-          <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>WFH Check Log (Today)</div>
-          <span className="pill">{current.checks?.length || 0} checks</span>
-        </div>
-        <div className="cardBody">
-          {current.checks?.length ? (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Status</th>
-                  <th>Update</th>
-                </tr>
-              </thead>
-              <tbody>
-                {current.checks
-                  .slice()
-                  .reverse()
-                  .map((c, idx) => (
-                    <tr key={`${c.time}-${idx}`}>
-                      <td>{fmtTime(c.time)}</td>
-                      <td>
-                        <span className="pill">{c.responded ? 'Responded' : 'Missed'}</span>
-                      </td>
-                      <td style={{ color: c.update ? 'var(--text-h)' : 'var(--text)' }}>
-                        {c.update || '—'}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          ) : (
-            <div style={{ fontSize: 13, color: 'var(--text)' }}>No checks yet.</div>
-          )}
-        </div>
-      </div>
+      <WfhActivityLog record={current} />
     </div>
   )
 }

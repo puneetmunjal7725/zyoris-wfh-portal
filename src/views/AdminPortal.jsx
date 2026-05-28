@@ -12,6 +12,7 @@ import {
   writeDb,
   writeSession,
 } from '../state/storage.js'
+import { buildDayActivityLog } from '../state/activityLog.js'
 import { ScoreBadge } from '../ui/ScoreBadge.jsx'
 
 function fmtTime(iso) {
@@ -111,30 +112,35 @@ function Overview() {
 
       <div className="card">
         <div className="cardHeader">
-          <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>WFH check log (Today)</div>
+          <div>
+            <div className="cardHeaderTitle">WFH activity log (Today)</div>
+            <div className="cardHeaderSub">Punch in/out, tasks, and activity checks — all employees</div>
+          </div>
           <span className="pill">All employees</span>
         </div>
         <div className="cardBody">
-          {todayAttendance.some((a) => (a.checks?.length || 0) > 0) ? (
+          {todayAttendance.some((a) => buildDayActivityLog(a).length > 0) ? (
             <table className="table">
               <thead>
                 <tr>
                   <th>Employee</th>
                   <th>Time</th>
+                  <th>Event</th>
                   <th>Status</th>
-                  <th>Update</th>
+                  <th>Details</th>
                 </tr>
               </thead>
               <tbody>
                 {todayAttendance
                   .flatMap((a) =>
-                    (a.checks || []).map((c, idx) => ({
-                      key: `${a.empId}-${c.time}-${idx}`,
+                    buildDayActivityLog(a).map((e) => ({
+                      key: `${a.empId}-${e.id}`,
                       empId: a.empId,
                       empName: a.empName,
-                      time: c.time,
-                      responded: c.responded,
-                      update: c.update,
+                      time: e.time,
+                      label: e.label,
+                      status: e.status,
+                      detail: e.detail,
                     })),
                   )
                   .sort((x, y) => (x.time < y.time ? 1 : -1))
@@ -145,18 +151,17 @@ function Overview() {
                         <div style={{ fontSize: 12, color: 'var(--text)' }}>{r.empId}</div>
                       </td>
                       <td>{fmtTime(r.time)}</td>
+                      <td style={{ fontWeight: 600, color: 'var(--text-h)' }}>{r.label}</td>
                       <td>
-                        <span className="pill">{r.responded ? 'Responded' : 'Missed'}</span>
+                        <span className="pill">{r.status}</span>
                       </td>
-                      <td style={{ color: r.update ? 'var(--text-h)' : 'var(--text)' }}>
-                        {r.update || '—'}
-                      </td>
+                      <td className="logDetail">{r.detail}</td>
                     </tr>
                   ))}
               </tbody>
             </table>
           ) : (
-            <div style={{ fontSize: 13, color: 'var(--text)' }}>No checks recorded today.</div>
+            <div style={{ fontSize: 13, color: 'var(--text)' }}>No activity recorded today.</div>
           )}
 
           <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text)' }}>
