@@ -109,15 +109,20 @@ function AttendanceView({ session }) {
   const shiftActiveRef = useRef(false)
 
   const date = todayStr()
-  const { record } = useMemo(
-    () => upsertAttendanceForToday({ empId: session.id, empName: session.name }),
-    [session.id, session.name],
+  const getTodayRecord = useMemo(
+    () => () => {
+      const db = ensureDbSeeded()
+      const existing = db.attendance.find((a) => a.empId === session.id && a.date === date)
+      if (existing) return existing
+      return upsertAttendanceForToday({ empId: session.id, empName: session.name }).record
+    },
+    [date, session.id, session.name],
   )
+  const [current, setCurrent] = useState(() => getTodayRecord())
 
-  const current = useMemo(() => {
-    const db = ensureDbSeeded()
-    return db.attendance.find((a) => a.empId === session.id && a.date === date) || record
-  }, [date, record, session.id])
+  function syncCurrent() {
+    setCurrent(getTodayRecord())
+  }
 
   const isActiveShift = Boolean(current.punchIn && !current.punchOut)
 
@@ -127,6 +132,10 @@ function AttendanceView({ session }) {
     const id = setInterval(() => setTick(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
+
+  useEffect(() => {
+    syncCurrent()
+  }, [getTodayRecord])
 
   function scheduleNextCheck() {
     const min = USE_DEMO_TIMINGS ? DEMO_CHECK_MS_MIN : PROD_CHECK_MS_MIN
@@ -151,6 +160,7 @@ function AttendanceView({ session }) {
       checks.push({ time: nowIso(), responded: false, update: '' })
       return { ...a, checks }
     })
+    syncCurrent()
 
     window.clearInterval(checkTimerRef.current)
     checkTimerRef.current = window.setInterval(() => {
@@ -162,6 +172,7 @@ function AttendanceView({ session }) {
           checkTimerRef.current = null
           checkActiveRef.current = false
           if (shiftActiveRef.current) scheduleNextCheck()
+          syncCurrent()
           return 0
         }
         return s - 1
@@ -210,6 +221,7 @@ function AttendanceView({ session }) {
     })
 
     if (!updated) return
+    syncCurrent()
     closeCheckAndScheduleNext()
   }
 
@@ -226,6 +238,7 @@ function AttendanceView({ session }) {
       // if record wasn't found (shouldn't happen), force insert by rewriting db from upsert
       writeDb(db)
     }
+    syncCurrent()
   }
 
   function punchOut() {
@@ -250,6 +263,7 @@ function AttendanceView({ session }) {
       blocker: punchOutBlocker.trim(),
     }))
     if (!next) return
+    syncCurrent()
   }
 
   const liveClock = new Date(tick).toLocaleTimeString([], {
