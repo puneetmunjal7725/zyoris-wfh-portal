@@ -87,6 +87,12 @@ export function upsertAttendanceForToday({ empId, empName }) {
   return { db, record, index: 0 }
 }
 
+export function readAttendanceRecord(empId, date = todayStr()) {
+  const db = readDb()
+  if (!db?.attendance) return null
+  return db.attendance.find((a) => a.empId === empId && a.date === date) || null
+}
+
 export function updateAttendance(empId, date, updater) {
   const db = ensureDbSeeded()
   const idx = db.attendance.findIndex((a) => a.empId === empId && a.date === date)

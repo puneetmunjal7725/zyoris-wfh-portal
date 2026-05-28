@@ -3,7 +3,7 @@ export function buildDayActivityLog(record) {
 
   const entries = []
 
-  if (Array.isArray(record.events)) {
+  if (Array.isArray(record.events) && record.events.length > 0) {
     for (const e of record.events) {
       entries.push({
         id: e.id || `${e.type}-${e.time}`,

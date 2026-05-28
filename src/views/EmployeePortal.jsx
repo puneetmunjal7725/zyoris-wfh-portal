@@ -4,11 +4,11 @@ import { PortalShell } from '../ui/PortalShell.jsx'
 import {
   ensureDbSeeded,
   nowIso,
+  readAttendanceRecord,
   readSession,
   todayStr,
   updateAttendance,
   upsertAttendanceForToday,
-  writeDb,
   writeSession,
 } from '../state/storage.js'
 import { appendAttendanceEvent } from '../state/activityLog.js'
@@ -112,19 +112,36 @@ function AttendanceView({ session }) {
   const shiftActiveRef = useRef(false)
 
   const date = todayStr()
-  const getTodayRecord = useMemo(
-    () => () => {
-      const db = ensureDbSeeded()
-      const existing = db.attendance.find((a) => a.empId === session.id && a.date === date)
-      if (existing) return existing
-      return upsertAttendanceForToday({ empId: session.id, empName: session.name }).record
-    },
-    [date, session.id, session.name],
-  )
-  const [current, setCurrent] = useState(() => getTodayRecord())
 
-  function syncCurrent() {
-    setCurrent(getTodayRecord())
+  function loadTodayRecord() {
+    const existing = readAttendanceRecord(session.id, date)
+    if (existing) return cloneRecord(existing)
+    return cloneRecord(
+      upsertAttendanceForToday({ empId: session.id, empName: session.name }).record,
+    )
+  }
+
+  const [current, setCurrent] = useState(() => loadTodayRecord())
+  const [logVersion, setLogVersion] = useState(0)
+
+  function applyRecord(next) {
+    if (!next) return null
+    setCurrent(cloneRecord(next))
+    setLogVersion((v) => v + 1)
+    return next
+  }
+
+  function mutateAttendance(updater) {
+    const next = updateAttendance(session.id, date, updater)
+    return applyRecord(next)
+  }
+
+  function cloneRecord(record) {
+    return {
+      ...record,
+      checks: [...(record.checks || [])],
+      events: [...(record.events || [])],
+    }
   }
 
   const isActiveShift = Boolean(current.punchIn && !current.punchOut)
@@ -137,8 +154,9 @@ function AttendanceView({ session }) {
   }, [])
 
   useEffect(() => {
-    syncCurrent()
-  }, [getTodayRecord])
+    applyRecord(loadTodayRecord())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.id, date])
 
   function scheduleNextCheck({ first = false } = {}) {
     const min = USE_DEMO_TIMINGS ? DEMO_CHECK_MS_MIN : PROD_CHECK_MS_MIN
@@ -159,7 +177,7 @@ function AttendanceView({ session }) {
 
     // Add check entry immediately; will be marked responded on submit
     const at = nowIso()
-    updateAttendance(session.id, date, (a) => {
+    mutateAttendance((a) => {
       const checks = Array.isArray(a.checks) ? a.checks.slice() : []
       checks.push({ time: at, responded: false, update: '' })
       let next = { ...a, checks }
@@ -171,7 +189,6 @@ function AttendanceView({ session }) {
       })
       return next
     })
-    syncCurrent()
 
     window.clearInterval(checkTimerRef.current)
     checkTimerRef.current = window.setInterval(() => {
@@ -181,7 +198,7 @@ function AttendanceView({ session }) {
           window.clearInterval(checkTimerRef.current)
           checkTimerRef.current = null
           checkActiveRef.current = false
-          updateAttendance(session.id, date, (a) => {
+          mutateAttendance((a) => {
             const checks = Array.isArray(a.checks) ? a.checks.slice() : []
             let missedTime = null
             for (let i = checks.length - 1; i >= 0; i--) {
@@ -210,7 +227,6 @@ function AttendanceView({ session }) {
             return next
           })
           if (shiftActiveRef.current) scheduleNextCheck()
-          syncCurrent()
           return 0
         }
         return s - 1
@@ -247,7 +263,7 @@ function AttendanceView({ session }) {
     const txt = checkText.trim()
     if (txt.length < 5) return
 
-    const updated = updateAttendance(session.id, date, (a) => {
+    const updated = mutateAttendance((a) => {
       const checks = Array.isArray(a.checks) ? a.checks.slice() : []
       let matchedTime = nowIso()
       for (let i = checks.length - 1; i >= 0; i--) {
@@ -281,20 +297,19 @@ function AttendanceView({ session }) {
     })
 
     if (!updated) return
-    syncCurrent()
     closeCheckAndScheduleNext()
   }
 
   function punchIn() {
     setError('')
-    const db = ensureDbSeeded()
-    const { record: r } = upsertAttendanceForToday({ empId: session.id, empName: session.name })
-    if (r.punchIn && !r.punchOut) {
+    const existing = readAttendanceRecord(session.id, date) ||
+      upsertAttendanceForToday({ empId: session.id, empName: session.name }).record
+    if (existing.punchIn && !existing.punchOut) {
       setError('You are already punched in.')
       return
     }
     const at = nowIso()
-    const next = updateAttendance(session.id, date, (a) => {
+    mutateAttendance((a) => {
       let nextRecord = { ...a, punchIn: at, punchOut: null }
       return appendAttendanceEvent(nextRecord, {
         type: 'PUNCH_IN',
@@ -303,11 +318,6 @@ function AttendanceView({ session }) {
         detail: 'Work session started',
       })
     })
-    if (!next) {
-      // if record wasn't found (shouldn't happen), force insert by rewriting db from upsert
-      writeDb(db)
-    }
-    syncCurrent()
   }
 
   function punchOut() {
@@ -331,7 +341,7 @@ function AttendanceView({ session }) {
     if (plan) detailParts.push(`Plan for tomorrow: ${plan}`)
     if (blocker) detailParts.push(`Blockers: ${blocker}`)
 
-    const next = updateAttendance(session.id, date, (a) => {
+    const next = mutateAttendance((a) => {
       let nextRecord = {
         ...a,
         punchOut: at,
@@ -347,7 +357,6 @@ function AttendanceView({ session }) {
       })
     })
     if (!next) return
-    syncCurrent()
   }
 
   const liveClock = new Date(tick).toLocaleTimeString([], {
@@ -449,7 +458,7 @@ function AttendanceView({ session }) {
         </div>
       </div>
 
-      <WfhActivityLog record={current} />
+      <WfhActivityLog key={logVersion} record={current} />
     </div>
   )
 }
