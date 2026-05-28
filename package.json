@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:zyoris": "vite build --mode production && node scripts/write-htaccess.mjs",
+    "package:zyoris": "npm run build:zyoris && node scripts/package-zyoris.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
