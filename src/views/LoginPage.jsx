@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from '../config/auth.js'
-import { ensureDbSeeded, writeSession } from '../state/storage.js'
+import { findEmployeeForLogin, writeSession } from '../state/storage.js'
 import { PortalShell } from '../ui/PortalShell.jsx'
 
 export function LoginPage() {
@@ -30,8 +30,7 @@ export function LoginPage() {
       return
     }
 
-    const db = ensureDbSeeded()
-    const emp = db.employees.find((x) => x.id.toUpperCase() === id.toUpperCase())
+    const emp = findEmployeeForLogin(id)
     if (!emp) {
       setError('Account not found. Contact your administrator.')
       return

@@ -368,6 +368,20 @@
   line-height: 1.45;
 }
 
+.cloudBadge {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  z-index: 50;
+  font-size: 0.72rem;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(41, 121, 255, 0.2);
+  border: 1px solid rgba(41, 121, 255, 0.45);
+  color: var(--blue-light);
+  pointer-events: none;
+}
+
 .profileGrid {
   display: grid;
   gap: 18px;

@@ -1,3 +1,14 @@
+import { isSupabaseConfigured } from '../lib/supabase.js'
+import {
+  deleteEmployeeRemote,
+  loadAllFromSupabase,
+  migrateLocalDbToSupabase,
+  subscribeSupabaseRealtime,
+  syncAttendanceRow,
+  syncEmployeeRow,
+  syncLeaveRow,
+} from './supabaseSync.js'
+
 const LS_KEY = 'zyoris_portal_v1'
 export const PORTAL_DB_EVENT = 'zyoris-portal-db-changed'
 
@@ -5,12 +16,19 @@ export function notifyPortalDbChanged() {
   window.dispatchEvent(new CustomEvent(PORTAL_DB_EVENT))
 }
 
+let dbCache = null
+let unsubscribeRealtime = null
+
 function safeParse(json, fallback) {
   try {
     return JSON.parse(json)
   } catch {
     return fallback
   }
+}
+
+export function getDbMode() {
+  return isSupabaseConfigured() ? 'cloud' : 'local'
 }
 
 export function todayStr(d = new Date()) {
@@ -25,27 +43,88 @@ export function nowIso(d = new Date()) {
 }
 
 export function readDb() {
+  if (dbCache) return dbCache
   const raw = localStorage.getItem(LS_KEY)
   if (!raw) return null
   return safeParse(raw, null)
 }
 
-export function writeDb(db) {
+function writeDbLocal(db) {
   localStorage.setItem(LS_KEY, JSON.stringify(db))
+  dbCache = db
   notifyPortalDbChanged()
 }
 
-export function ensureDbSeeded() {
-  const existing = readDb()
-  if (existing) return existing
-
-  const db = {
-    employees: [],
-    attendance: [],
-    leaves: [],
+export function writeDb(db) {
+  if (isSupabaseConfigured()) {
+    dbCache = db
+    notifyPortalDbChanged()
+    return
   }
-  writeDb(db)
+  writeDbLocal(db)
+}
+
+function emptyDb() {
+  return { employees: [], attendance: [], leaves: [] }
+}
+
+function ensureDbSeededLocal() {
+  const existing = readDb()
+  if (existing) {
+    dbCache = existing
+    return existing
+  }
+  const db = emptyDb()
+  writeDbLocal(db)
   return db
+}
+
+export function ensureDbSeeded() {
+  if (dbCache) return dbCache
+  if (isSupabaseConfigured()) return emptyDb()
+  return ensureDbSeededLocal()
+}
+
+export async function initPortalDb() {
+  if (unsubscribeRealtime) {
+    unsubscribeRealtime()
+    unsubscribeRealtime = null
+  }
+
+  if (isSupabaseConfigured()) {
+    const localRaw = localStorage.getItem(LS_KEY)
+    const localDb = localRaw ? safeParse(localRaw, null) : null
+    const hasLocal =
+      localDb &&
+      ((localDb.employees?.length || 0) > 0 ||
+        (localDb.attendance?.length || 0) > 0 ||
+        (localDb.leaves?.length || 0) > 0)
+
+    dbCache = await loadAllFromSupabase()
+    const cloudEmpty =
+      !dbCache.employees.length && !dbCache.attendance.length && !dbCache.leaves.length
+
+    if (hasLocal && cloudEmpty) {
+      dbCache = await migrateLocalDbToSupabase(localDb)
+      localStorage.removeItem(LS_KEY)
+    }
+
+    unsubscribeRealtime = subscribeSupabaseRealtime(async () => {
+      try {
+        dbCache = await loadAllFromSupabase()
+        notifyPortalDbChanged()
+      } catch {
+        /* ignore transient network errors */
+      }
+    })
+
+    notifyPortalDbChanged()
+    return dbCache
+  }
+
+  dbCache = ensureDbSeededLocal()
+  notifyPortalDbChanged()
+  return dbCache
 }
 
 export function readSession() {
@@ -71,6 +150,12 @@ export function scoreTone(score) {
   return 'red'
 }
 
+function persistDb(db) {
+  dbCache = db
+  if (isSupabaseConfigured()) notifyPortalDbChanged()
+  else writeDbLocal(db)
+}
+
 export function upsertAttendanceForToday({ empId, empName }) {
   const db = ensureDbSeeded()
   const date = todayStr()
@@ -87,14 +172,16 @@ export function upsertAttendanceForToday({ empId, empName }) {
     plan: '',
     blocker: '',
     checks: [],
+    events: [],
   }
   db.attendance.unshift(record)
-  writeDb(db)
+  persistDb(db)
+  if (isSupabaseConfigured()) void syncAttendanceRow(record).catch(console.error)
   return { db, record, index: 0 }
 }
 
 export function readAttendanceRecord(empId, date = todayStr()) {
-  const db = readDb()
+  const db = ensureDbSeeded()
   if (!db?.attendance) return null
   return db.attendance.find((a) => a.empId === empId && a.date === date) || null
 }
@@ -103,16 +190,22 @@ export function updateAttendance(empId, date, updater) {
   const db = ensureDbSeeded()
   const idx = db.attendance.findIndex((a) => a.empId === empId && a.date === date)
   if (idx < 0) return null
-  const next = updater({ ...db.attendance[idx] })
+  const next = updater({
+    ...db.attendance[idx],
+    checks: [...(db.attendance[idx].checks || [])],
+    events: [...(db.attendance[idx].events || [])],
+  })
   db.attendance[idx] = next
-  writeDb(db)
+  persistDb(db)
+  if (isSupabaseConfigured()) void syncAttendanceRow(next).catch(console.error)
   return next
 }
 
 export function addLeave(leave) {
   const db = ensureDbSeeded()
   db.leaves.unshift(leave)
-  writeDb(db)
+  persistDb(db)
+  if (isSupabaseConfigured()) void syncLeaveRow(leave).catch(console.error)
   return leave
 }
 
@@ -126,7 +219,8 @@ export function updateLeave(leaveId, updater) {
   const idx = db.leaves.findIndex((l) => l.id === leaveId)
   if (idx < 0) return null
   db.leaves[idx] = updater({ ...db.leaves[idx] })
-  writeDb(db)
+  persistDb(db)
+  if (isSupabaseConfigured()) void syncLeaveRow(db.leaves[idx]).catch(console.error)
   return db.leaves[idx]
 }
 
@@ -145,13 +239,18 @@ export function getEmployeeById(empId) {
   return db.employees.find((e) => e.id.toUpperCase() === empId.toUpperCase()) || null
 }
 
+export function findEmployeeForLogin(empId) {
+  return getEmployeeById(empId)
+}
+
 export function updateEmployee(empId, updater) {
   const db = ensureDbSeeded()
   const idx = db.employees.findIndex((e) => e.id.toUpperCase() === empId.toUpperCase())
   if (idx < 0) return null
   const next = updater({ ...db.employees[idx] })
   db.employees[idx] = next
-  writeDb(db)
+  persistDb(db)
+  if (isSupabaseConfigured()) void syncEmployeeRow(next).catch(console.error)
   return next
 }
 
@@ -159,14 +258,18 @@ export function addEmployee(emp) {
   const db = ensureDbSeeded()
   const row = { ...defaultEmployeeFields(), ...emp }
   db.employees.unshift(row)
-  writeDb(db)
+  persistDb(db)
+  if (isSupabaseConfigured()) void syncEmployeeRow(row).catch(console.error)
   return row
 }
 
 export function removeEmployee(empId) {
   const db = ensureDbSeeded()
   db.employees = db.employees.filter((e) => e.id !== empId)
-  writeDb(db)
+  db.attendance = db.attendance.filter((a) => a.empId !== empId)
+  db.leaves = db.leaves.filter((l) => l.empId !== empId)
+  persistDb(db)
+  if (isSupabaseConfigured()) void deleteEmployeeRemote(empId).catch(console.error)
   return db
 }
 
@@ -176,4 +279,3 @@ export function listAttendanceForEmployee(empId) {
     .filter((a) => a.empId.toUpperCase() === empId.toUpperCase())
     .sort((a, b) => (a.date < b.date ? 1 : -1))
 }
-
