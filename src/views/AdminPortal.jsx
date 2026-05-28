@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { usePortalDb } from '../state/portalDb.js'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { PortalShell } from '../ui/PortalShell.jsx'
 import {
@@ -8,13 +9,15 @@ import {
   getEmployeeById,
   nowIso,
   readSession,
+  getLastSyncError,
+  readLocalBackupDb,
   removeEmployee,
+  restoreBrowserBackupToCloud,
   todayStr,
   updateLeave,
   writeSession,
 } from '../state/storage.js'
 import { buildDayActivityLog } from '../state/activityLog.js'
-import { usePortalDb } from '../state/portalDb.js'
 import { ScoreBadge } from '../ui/ScoreBadge.jsx'
 import { EmployeeProfileEditor } from '../ui/EmployeeProfileEditor.jsx'
 import { fmtDate, fmtTime } from '../utils/format.js'
@@ -212,6 +215,48 @@ function Overview() {
   )
 }
 
+function DataRecoveryBanner() {
+  const { version } = usePortalDb()
+  const [msg, setMsg] = useState('')
+  const syncErr = getLastSyncError()
+  const backup = readLocalBackupDb()
+  const backupCount = backup?.employees?.length || 0
+  const showRestore = backupCount > 0
+
+  if (!showRestore && !syncErr) return null
+
+  return (
+    <div className="card" style={{ marginBottom: 14, borderColor: 'rgba(234, 179, 8, 0.45)' }}>
+      <div className="cardBody">
+        {syncErr ? (
+          <p style={{ fontSize: 13, color: '#fbbf24', margin: '0 0 10px' }}>
+            Cloud save warning: {syncErr}. Run email column SQL in Supabase if you have not yet.
+          </p>
+        ) : null}
+        {showRestore ? (
+          <>
+            <p style={{ fontSize: 13, color: 'var(--text)', margin: '0 0 10px' }}>
+              Browser backup has <b>{backupCount}</b> employee(s). Use this if data disappeared after refresh.
+            </p>
+            <button
+              type="button"
+              className="btn btnPrimary"
+              onClick={async () => {
+                setMsg('Restoring…')
+                const result = await restoreBrowserBackupToCloud()
+                setMsg(result.message)
+              }}
+            >
+              Restore backup to cloud
+            </button>
+          </>
+        ) : null}
+        {msg ? <p style={{ fontSize: 13, color: 'var(--text-h)', marginTop: 10 }}>{msg}</p> : null}
+      </div>
+    </div>
+  )
+}
+
 function Employees() {
   const { db, version } = usePortalDb()
   const [id, setId] = useState('')
@@ -267,6 +312,7 @@ function Employees() {
 
   return (
     <div className="container">
+      <DataRecoveryBanner key={version} />
       <div className="card" style={{ marginBottom: 14 }}>
         <div className="cardHeader">
           <div className="cardHeaderTitle">Add employee</div>

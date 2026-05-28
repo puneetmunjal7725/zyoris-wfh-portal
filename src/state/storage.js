@@ -18,6 +18,46 @@ export function notifyPortalDbChanged() {
 
 let dbCache = null
 let unsubscribeRealtime = null
+let lastSyncError = null
+
+function countRecords(db) {
+  if (!db) return 0
+  return (db.employees?.length || 0) + (db.attendance?.length || 0) + (db.leaves?.length || 0)
+}
+
+function backupDbToLocal(db) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(db))
+  } catch {
+    /* storage full — ignore */
+  }
+}
+
+export function getLastSyncError() {
+  return lastSyncError
+}
+
+export function readLocalBackupDb() {
+  const raw = localStorage.getItem(LS_KEY)
+  if (!raw) return null
+  return safeParse(raw, null)
+}
+
+export async function restoreBrowserBackupToCloud() {
+  if (!isSupabaseConfigured()) return { ok: false, message: 'Cloud mode is not enabled.' }
+  const localDb = readLocalBackupDb()
+  if (!localDb || countRecords(localDb) === 0) {
+    return { ok: false, message: 'No backup found in this browser.' }
+  }
+  dbCache = await migrateLocalDbToSupabase(localDb)
+  backupDbToLocal(dbCache)
+  lastSyncError = null
+  notifyPortalDbChanged()
+  return {
+    ok: true,
+    message: `Restored ${dbCache.employees.length} employees to cloud.`,
+  }
+}
 
 function safeParse(json, fallback) {
   try {
@@ -100,18 +140,35 @@ export async function initPortalDb() {
         (localDb.attendance?.length || 0) > 0 ||
         (localDb.leaves?.length || 0) > 0)
 
-    dbCache = await loadAllFromSupabase()
-    const cloudEmpty =
-      !dbCache.employees.length && !dbCache.attendance.length && !dbCache.leaves.length
+    try {
+      dbCache = await loadAllFromSupabase()
+    } catch (err) {
+      if (hasLocal) {
+        dbCache = localDb
+        backupDbToLocal(dbCache)
+        lastSyncError = err?.message || 'Could not load cloud data. Using browser backup.'
+      } else {
+        throw err
+      }
+    }
 
-    if (hasLocal && cloudEmpty) {
+    const cloudEmpty = countRecords(dbCache) === 0
+    const localRicher = hasLocal && countRecords(localDb) > countRecords(dbCache)
+
+    if (hasLocal && (cloudEmpty || localRicher)) {
       dbCache = await migrateLocalDbToSupabase(localDb)
-      localStorage.removeItem(LS_KEY)
+      backupDbToLocal(dbCache)
+      lastSyncError = null
     }
 
     unsubscribeRealtime = subscribeSupabaseRealtime(async () => {
       try {
-        dbCache = await loadAllFromSupabase()
+        const next = await loadAllFromSupabase()
+        const prevCount = countRecords(dbCache)
+        const nextCount = countRecords(next)
+        if (nextCount === 0 && prevCount > 0) return
+        dbCache = next
+        backupDbToLocal(dbCache)
         notifyPortalDbChanged()
       } catch {
         /* ignore transient network errors */
@@ -152,8 +209,22 @@ export function scoreTone(score) {
 
 function persistDb(db) {
   dbCache = db
+  backupDbToLocal(db)
   if (isSupabaseConfigured()) notifyPortalDbChanged()
-  else writeDbLocal(db)
+  else notifyPortalDbChanged()
+}
+
+function runCloudSync(promise) {
+  if (!isSupabaseConfigured()) return
+  void promise
+    .then(() => {
+      lastSyncError = null
+    })
+    .catch((err) => {
+      lastSyncError = err?.message || 'Cloud save failed. Data is kept in this browser.'
+      console.error('[Zyoris cloud sync]', err)
+      notifyPortalDbChanged()
+    })
 }
 
 export function upsertAttendanceForToday({ empId, empName }) {
@@ -176,7 +247,7 @@ export function upsertAttendanceForToday({ empId, empName }) {
   }
   db.attendance.unshift(record)
   persistDb(db)
-  if (isSupabaseConfigured()) void syncAttendanceRow(record).catch(console.error)
+  if (isSupabaseConfigured()) runCloudSync(syncAttendanceRow(record))
   return { db, record, index: 0 }
 }
 
@@ -197,7 +268,7 @@ export function updateAttendance(empId, date, updater) {
   })
   db.attendance[idx] = next
   persistDb(db)
-  if (isSupabaseConfigured()) void syncAttendanceRow(next).catch(console.error)
+  if (isSupabaseConfigured()) runCloudSync(syncAttendanceRow(next))
   return next
 }
 
@@ -205,7 +276,7 @@ export function addLeave(leave) {
   const db = ensureDbSeeded()
   db.leaves.unshift(leave)
   persistDb(db)
-  if (isSupabaseConfigured()) void syncLeaveRow(leave).catch(console.error)
+  if (isSupabaseConfigured()) runCloudSync(syncLeaveRow(leave))
   return leave
 }
 
@@ -220,7 +291,7 @@ export function updateLeave(leaveId, updater) {
   if (idx < 0) return null
   db.leaves[idx] = updater({ ...db.leaves[idx] })
   persistDb(db)
-  if (isSupabaseConfigured()) void syncLeaveRow(db.leaves[idx]).catch(console.error)
+  if (isSupabaseConfigured()) runCloudSync(syncLeaveRow(db.leaves[idx]))
   return db.leaves[idx]
 }
 
@@ -251,7 +322,7 @@ export function updateEmployee(empId, updater) {
   const next = updater({ ...db.employees[idx] })
   db.employees[idx] = next
   persistDb(db)
-  if (isSupabaseConfigured()) void syncEmployeeRow(next).catch(console.error)
+  if (isSupabaseConfigured()) runCloudSync(syncEmployeeRow(next))
   return next
 }
 
@@ -260,7 +331,7 @@ export function addEmployee(emp) {
   const row = { ...defaultEmployeeFields(), ...emp }
   db.employees.unshift(row)
   persistDb(db)
-  if (isSupabaseConfigured()) void syncEmployeeRow(row).catch(console.error)
+  if (isSupabaseConfigured()) runCloudSync(syncEmployeeRow(row))
   return row
 }
 
@@ -270,7 +341,7 @@ export function removeEmployee(empId) {
   db.attendance = db.attendance.filter((a) => a.empId !== empId)
   db.leaves = db.leaves.filter((l) => l.empId !== empId)
   persistDb(db)
-  if (isSupabaseConfigured()) void deleteEmployeeRemote(empId).catch(console.error)
+  if (isSupabaseConfigured()) runCloudSync(deleteEmployeeRemote(empId))
   return db
 }
 

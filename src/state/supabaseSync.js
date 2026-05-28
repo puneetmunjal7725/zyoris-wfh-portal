@@ -134,7 +134,13 @@ export function subscribeSupabaseRealtime(onChange) {
 
 export async function syncEmployeeRow(employee) {
   if (!supabase) return
-  const { error } = await supabase.from('employees').upsert(employeeToRow(employee), { onConflict: 'id' })
+  let { error } = await supabase.from('employees').upsert(employeeToRow(employee), { onConflict: 'id' })
+  if (error && /email|column/i.test(String(error.message))) {
+    const row = employeeToRow(employee)
+    delete row.email
+    const retry = await supabase.from('employees').upsert(row, { onConflict: 'id' })
+    error = retry.error
+  }
   if (error) throw error
 }
 
