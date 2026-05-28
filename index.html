@@ -8,6 +8,11 @@
     <title>Team Portal</title>
   </head>
   <body>
+    <script>
+      if (!location.hash || location.hash === '#') {
+        location.replace(location.pathname.replace(/\/$/, '') + '#/login')
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
