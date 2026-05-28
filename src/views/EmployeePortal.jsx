@@ -9,11 +9,11 @@ import {
   todayStr,
   updateAttendance,
   upsertAttendanceForToday,
-  writeSession,
 } from '../state/storage.js'
 import { appendAttendanceEvent } from '../state/activityLog.js'
 import { ScoreBadge } from '../ui/ScoreBadge.jsx'
 import { WfhActivityLog } from '../ui/WfhActivityLog.jsx'
+import { EmployeeProfileView } from './EmployeeProfileView.jsx'
 
 const DEMO_CHECK_MS_MIN = 3 * 60 * 1000
 const DEMO_CHECK_MS_MAX = 5 * 60 * 1000
@@ -33,7 +33,6 @@ function fmtTime(iso) {
 }
 
 function EmployeeNav() {
-  const navigate = useNavigate()
   const linkClass = ({ isActive }) => `btn${isActive ? ' navLinkActive' : ''}`
 
   return (
@@ -44,16 +43,9 @@ function EmployeeNav() {
       <NavLink className={linkClass} to="/employee/leaves">
         Leaves
       </NavLink>
-      <button
-        className="btn"
-        type="button"
-        onClick={() => {
-          writeSession(null)
-          navigate('/login', { replace: true })
-        }}
-      >
-        Logout
-      </button>
+      <NavLink className={linkClass} to="/employee/profile">
+        My Profile
+      </NavLink>
     </>
   )
 }
@@ -517,7 +509,6 @@ function LeavesView({ session }) {
                 <option>Casual Leave</option>
                 <option>Emergency Leave</option>
                 <option>Half Day</option>
-                <option>Intern Leave</option>
               </select>
             </div>
             <div />
@@ -604,6 +595,7 @@ export function EmployeePortal() {
       <Routes>
         <Route path="/" element={<AttendanceView session={session} />} />
         <Route path="/leaves" element={<LeavesView session={session} />} />
+        <Route path="/profile" element={<EmployeeProfileView session={session} />} />
         <Route path="*" element={<Navigate to="/employee" replace />} />
       </Routes>
     </PortalShell>

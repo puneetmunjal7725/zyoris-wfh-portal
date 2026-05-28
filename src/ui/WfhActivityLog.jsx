@@ -1,13 +1,5 @@
-import { buildDayActivityLog } from '../state/activityLog.js'
-
-function fmtTime(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
+import { buildDayActivityLog, buildEmployeeActivityHistory } from '../state/activityLog.js'
+import { fmtDate, fmtTime } from '../utils/format.js'
 
 function statusClass(type, status) {
   if (type === 'PUNCH_IN') return 'pill scoreGreen'
@@ -17,15 +9,24 @@ function statusClass(type, status) {
   return 'pill'
 }
 
-export function WfhActivityLog({ record, emptyMessage = 'No activity yet today.' }) {
-  const entries = buildDayActivityLog(record)
+export function WfhActivityLog({
+  record,
+  empId,
+  showHistory = false,
+  emptyMessage = 'No activity yet.',
+  title = 'WFH Activity Log',
+  subtitle = 'Punch in/out, work updates, and activity checks',
+}) {
+  const entries = showHistory && empId
+    ? buildEmployeeActivityHistory(empId)
+    : buildDayActivityLog(record)
 
   return (
     <div className="card">
       <div className="cardHeader">
         <div>
-          <div className="cardHeaderTitle">WFH Activity Log (Today)</div>
-          <div className="cardHeaderSub">Punch in/out, work updates, and activity checks</div>
+          <div className="cardHeaderTitle">{title}</div>
+          <div className="cardHeaderSub">{subtitle}</div>
         </div>
         <span className="pill">{entries.length} entries</span>
       </div>
@@ -34,6 +35,7 @@ export function WfhActivityLog({ record, emptyMessage = 'No activity yet today.'
           <table className="table">
             <thead>
               <tr>
+                <th>Date</th>
                 <th>Time</th>
                 <th>Event</th>
                 <th>Status</th>
@@ -41,8 +43,9 @@ export function WfhActivityLog({ record, emptyMessage = 'No activity yet today.'
               </tr>
             </thead>
             <tbody>
-              {[...entries].reverse().map((e) => (
+              {entries.map((e) => (
                 <tr key={e.id}>
+                  <td>{fmtDate(e.date || e.time)}</td>
                   <td>{fmtTime(e.time)}</td>
                   <td style={{ fontWeight: 600, color: 'var(--text-h)' }}>{e.label}</td>
                   <td>

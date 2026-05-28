@@ -119,11 +119,37 @@ export function updateLeave(leaveId, updater) {
   return db.leaves[idx]
 }
 
+export function defaultEmployeeFields(overrides = {}) {
+  return {
+    address: '',
+    compensation: '',
+    compensationType: 'Salary',
+    photo: '',
+    ...overrides,
+  }
+}
+
+export function getEmployeeById(empId) {
+  const db = ensureDbSeeded()
+  return db.employees.find((e) => e.id.toUpperCase() === empId.toUpperCase()) || null
+}
+
+export function updateEmployee(empId, updater) {
+  const db = ensureDbSeeded()
+  const idx = db.employees.findIndex((e) => e.id.toUpperCase() === empId.toUpperCase())
+  if (idx < 0) return null
+  const next = updater({ ...db.employees[idx] })
+  db.employees[idx] = next
+  writeDb(db)
+  return next
+}
+
 export function addEmployee(emp) {
   const db = ensureDbSeeded()
-  db.employees.unshift(emp)
+  const row = { ...defaultEmployeeFields(), ...emp }
+  db.employees.unshift(row)
   writeDb(db)
-  return emp
+  return row
 }
 
 export function removeEmployee(empId) {
@@ -131,5 +157,12 @@ export function removeEmployee(empId) {
   db.employees = db.employees.filter((e) => e.id !== empId)
   writeDb(db)
   return db
+}
+
+export function listAttendanceForEmployee(empId) {
+  const db = ensureDbSeeded()
+  return db.attendance
+    .filter((a) => a.empId.toUpperCase() === empId.toUpperCase())
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
 }
 

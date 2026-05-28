@@ -1,3 +1,5 @@
+import { listAttendanceForEmployee } from './storage.js'
+
 export function buildDayActivityLog(record) {
   if (!record) return []
 
@@ -7,6 +9,7 @@ export function buildDayActivityLog(record) {
     for (const e of record.events) {
       entries.push({
         id: e.id || `${e.type}-${e.time}`,
+        date: record.date,
         type: e.type,
         time: e.time,
         label: eventLabel(e.type),
@@ -20,6 +23,7 @@ export function buildDayActivityLog(record) {
     if (record.punchIn) {
       entries.push({
         id: `punch-in-${record.punchIn}`,
+        date: record.date,
         type: 'PUNCH_IN',
         time: record.punchIn,
         label: 'Punch In',
@@ -31,6 +35,7 @@ export function buildDayActivityLog(record) {
     for (const [idx, c] of (record.checks || []).entries()) {
       entries.push({
         id: `check-${c.time}-${idx}`,
+        date: record.date,
         type: 'WFH_CHECK',
         time: c.time,
         label: 'WFH Activity Check',
@@ -46,6 +51,7 @@ export function buildDayActivityLog(record) {
       if (record.blocker?.trim()) parts.push(`Blockers: ${record.blocker.trim()}`)
       entries.push({
         id: `punch-out-${record.punchOut}`,
+        date: record.date,
         type: 'PUNCH_OUT',
         time: record.punchOut,
         label: 'Punch Out',
@@ -56,6 +62,18 @@ export function buildDayActivityLog(record) {
   }
 
   return entries.sort((a, b) => new Date(a.time) - new Date(b.time))
+}
+
+export function buildEmployeeActivityHistory(empId, { limitDays = 90 } = {}) {
+  const records = listAttendanceForEmployee(empId).slice(0, limitDays)
+  return records
+    .flatMap((record) =>
+      buildDayActivityLog(record).map((e) => ({
+        ...e,
+        date: e.date || record.date,
+      })),
+    )
+    .sort((a, b) => new Date(b.time) - new Date(a.time))
 }
 
 function eventLabel(type) {
@@ -71,10 +89,6 @@ function eventLabel(type) {
   }
 }
 
-/**
- * @param {object} attendance
- * @param {{ type: ActivityType, time: string, status?: string, detail?: string }} event
- */
 export function appendAttendanceEvent(attendance, event) {
   const events = Array.isArray(attendance.events) ? attendance.events.slice() : []
   events.push({

@@ -2,24 +2,21 @@ import { useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { PortalShell } from '../ui/PortalShell.jsx'
 import {
+  addEmployee,
   computeScore,
   ensureDbSeeded,
+  getEmployeeById,
   nowIso,
   readSession,
   removeEmployee,
   todayStr,
   updateLeave,
-  writeDb,
   writeSession,
 } from '../state/storage.js'
 import { buildDayActivityLog } from '../state/activityLog.js'
 import { ScoreBadge } from '../ui/ScoreBadge.jsx'
-
-function fmtTime(iso) {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-}
+import { EmployeeProfileEditor } from '../ui/EmployeeProfileEditor.jsx'
+import { fmtDate, fmtTime } from '../utils/format.js'
 
 function AdminNav() {
   const navigate = useNavigate()
@@ -124,6 +121,7 @@ function Overview() {
               <thead>
                 <tr>
                   <th>Employee</th>
+                  <th>Date</th>
                   <th>Time</th>
                   <th>Event</th>
                   <th>Status</th>
@@ -137,6 +135,7 @@ function Overview() {
                       key: `${a.empId}-${e.id}`,
                       empId: a.empId,
                       empName: a.empName,
+                      date: e.date || a.date,
                       time: e.time,
                       label: e.label,
                       status: e.status,
@@ -150,6 +149,7 @@ function Overview() {
                         <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>{r.empName}</div>
                         <div style={{ fontSize: 12, color: 'var(--text)' }}>{r.empId}</div>
                       </td>
+                      <td>{fmtDate(r.date || r.time)}</td>
                       <td>{fmtTime(r.time)}</td>
                       <td style={{ fontWeight: 600, color: 'var(--text-h)' }}>{r.label}</td>
                       <td>
@@ -226,10 +226,12 @@ function Employees() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [refresh, setRefresh] = useState(0)
+  const [editingId, setEditingId] = useState(null)
 
   // eslint-disable-next-line no-unused-vars
   const _ = refresh
   const employees = ensureDbSeeded().employees
+  const editingEmployee = editingId ? getEmployeeById(editingId) : null
 
   function add() {
     setError('')
@@ -247,8 +249,7 @@ function Employees() {
       setError('Employee ID already exists.')
       return
     }
-    db.employees.unshift({ id: nextId, name: name.trim(), role, password })
-    writeDb(db)
+    addEmployee({ id: nextId, name: name.trim(), role, password })
     setId('')
     setName('')
     setPassword('')
@@ -257,6 +258,7 @@ function Employees() {
 
   function del(empId) {
     removeEmployee(empId)
+    if (editingId === empId) setEditingId(null)
     setRefresh((x) => x + 1)
   }
 
@@ -329,9 +331,14 @@ function Employees() {
                   </td>
                   <td>{e.role}</td>
                   <td>
-                    <button className="btn btnDanger" onClick={() => del(e.id)}>
-                      Remove
-                    </button>
+                    <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                      <button className="btn btnPrimary" type="button" onClick={() => setEditingId(e.id)}>
+                        Edit profile
+                      </button>
+                      <button className="btn btnDanger" type="button" onClick={() => del(e.id)}>
+                        Remove
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -339,6 +346,17 @@ function Employees() {
           </table>
         </div>
       </div>
+
+      {editingEmployee ? (
+        <EmployeeProfileEditor
+          employee={editingEmployee}
+          onSaved={() => {
+            setEditingId(null)
+            setRefresh((x) => x + 1)
+          }}
+          onCancel={() => setEditingId(null)}
+        />
+      ) : null}
     </div>
   )
 }
