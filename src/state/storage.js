@@ -1,4 +1,9 @@
 const LS_KEY = 'zyoris_portal_v1'
+export const PORTAL_DB_EVENT = 'zyoris-portal-db-changed'
+
+export function notifyPortalDbChanged() {
+  window.dispatchEvent(new CustomEvent(PORTAL_DB_EVENT))
+}
 
 function safeParse(json, fallback) {
   try {
@@ -27,6 +32,7 @@ export function readDb() {
 
 export function writeDb(db) {
   localStorage.setItem(LS_KEY, JSON.stringify(db))
+  notifyPortalDbChanged()
 }
 
 export function ensureDbSeeded() {
@@ -108,6 +114,11 @@ export function addLeave(leave) {
   db.leaves.unshift(leave)
   writeDb(db)
   return leave
+}
+
+export function listLeavesForEmployee(empId) {
+  const db = ensureDbSeeded()
+  return db.leaves.filter((l) => l.empId.toUpperCase() === empId.toUpperCase())
 }
 
 export function updateLeave(leaveId, updater) {

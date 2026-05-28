@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { PortalShell } from '../ui/PortalShell.jsx'
 import {
@@ -14,6 +14,7 @@ import {
   writeSession,
 } from '../state/storage.js'
 import { buildDayActivityLog } from '../state/activityLog.js'
+import { usePortalDb } from '../state/portalDb.js'
 import { ScoreBadge } from '../ui/ScoreBadge.jsx'
 import { EmployeeProfileEditor } from '../ui/EmployeeProfileEditor.jsx'
 import { fmtDate, fmtTime } from '../utils/format.js'
@@ -48,21 +49,31 @@ function AdminNav() {
 }
 
 function Overview() {
-  const [refresh, setRefresh] = useState(0)
+  const { db, version } = usePortalDb()
   const date = todayStr()
 
-  // refresh exists only to force a rerender when user clicks Refresh
-  // eslint-disable-next-line no-unused-vars
-  const _ = refresh
-
-  const db = ensureDbSeeded()
-  const employees = db.employees
-  const todayAttendance = db.attendance.filter((a) => a.date === date)
-
-  const punchIns = todayAttendance.filter((a) => a.punchIn)
-
-  const byEmp = new Map()
-  for (const a of todayAttendance) byEmp.set(a.empId, a)
+  const { employees, todayAttendance, punchIns, byEmp, activityRows } = useMemo(() => {
+    const employees = db.employees
+    const todayAttendance = db.attendance.filter((a) => a.date === date)
+    const punchIns = todayAttendance.filter((a) => a.punchIn)
+    const byEmp = new Map()
+    for (const a of todayAttendance) byEmp.set(a.empId, a)
+    const activityRows = todayAttendance
+      .flatMap((a) =>
+        buildDayActivityLog(a).map((e) => ({
+          key: `${a.empId}-${e.id}`,
+          empId: a.empId,
+          empName: a.empName,
+          date: e.date || a.date,
+          time: e.time,
+          label: e.label,
+          status: e.status,
+          detail: e.detail,
+        })),
+      )
+      .sort((x, y) => (x.time < y.time ? 1 : -1))
+    return { employees, todayAttendance, punchIns, byEmp, activityRows }
+  }, [db, date, version])
 
   return (
     <div className="container">
@@ -116,7 +127,7 @@ function Overview() {
           <span className="pill">All employees</span>
         </div>
         <div className="cardBody">
-          {todayAttendance.some((a) => buildDayActivityLog(a).length > 0) ? (
+          {activityRows.length ? (
             <table className="table">
               <thead>
                 <tr>
@@ -129,21 +140,7 @@ function Overview() {
                 </tr>
               </thead>
               <tbody>
-                {todayAttendance
-                  .flatMap((a) =>
-                    buildDayActivityLog(a).map((e) => ({
-                      key: `${a.empId}-${e.id}`,
-                      empId: a.empId,
-                      empName: a.empName,
-                      date: e.date || a.date,
-                      time: e.time,
-                      label: e.label,
-                      status: e.status,
-                      detail: e.detail,
-                    })),
-                  )
-                  .sort((x, y) => (x.time < y.time ? 1 : -1))
-                  .map((r) => (
+                {activityRows.map((r) => (
                     <tr key={r.key}>
                       <td>
                         <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>{r.empName}</div>
@@ -165,13 +162,8 @@ function Overview() {
           )}
 
           <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text)' }}>
-            Note: Score = (responded / total) × 100. Green ≥80%, amber ≥50%, red below.
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <button className="btn" onClick={() => setRefresh((x) => x + 1)}>
-              Refresh
-            </button>
+            Note: Score = (responded / total) × 100. Green ≥80%, amber ≥50%, red below. Updates
+            automatically.
           </div>
         </div>
       </div>
@@ -220,17 +212,15 @@ function Overview() {
 }
 
 function Employees() {
+  const { db, version } = usePortalDb()
   const [id, setId] = useState('')
   const [name, setName] = useState('')
   const [role, setRole] = useState('Engineer')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [refresh, setRefresh] = useState(0)
   const [editingId, setEditingId] = useState(null)
 
-  // eslint-disable-next-line no-unused-vars
-  const _ = refresh
-  const employees = ensureDbSeeded().employees
+  const employees = useMemo(() => db.employees, [db, version])
   const editingEmployee = editingId ? getEmployeeById(editingId) : null
 
   function add() {
@@ -253,13 +243,11 @@ function Employees() {
     setId('')
     setName('')
     setPassword('')
-    setRefresh((x) => x + 1)
   }
 
   function del(empId) {
     removeEmployee(empId)
     if (editingId === empId) setEditingId(null)
-    setRefresh((x) => x + 1)
   }
 
   return (
@@ -350,10 +338,7 @@ function Employees() {
       {editingEmployee ? (
         <EmployeeProfileEditor
           employee={editingEmployee}
-          onSaved={() => {
-            setEditingId(null)
-            setRefresh((x) => x + 1)
-          }}
+          onSaved={() => setEditingId(null)}
           onCancel={() => setEditingId(null)}
         />
       ) : null}
@@ -362,10 +347,9 @@ function Employees() {
 }
 
 function Leaves() {
-  const [refresh, setRefresh] = useState(0)
-  // eslint-disable-next-line no-unused-vars
-  const _ = refresh
-  const leaves = ensureDbSeeded().leaves
+  const { db, version } = usePortalDb()
+  const leaves = useMemo(() => db.leaves, [db, version])
+  const pending = useMemo(() => leaves.filter((l) => l.status === 'PENDING'), [leaves])
 
   function decide(leaveId, status) {
     updateLeave(leaveId, (l) => ({
@@ -374,10 +358,7 @@ function Leaves() {
       decidedAt: nowIso(),
       decidedBy: 'Admin',
     }))
-    setRefresh((x) => x + 1)
   }
-
-  const pending = leaves.filter((l) => l.status === 'PENDING')
 
   return (
     <div className="container">

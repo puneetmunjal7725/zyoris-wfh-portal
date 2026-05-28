@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { PortalShell } from '../ui/PortalShell.jsx'
 import {
-  ensureDbSeeded,
+  addLeave,
   nowIso,
   readAttendanceRecord,
   readSession,
@@ -10,7 +10,9 @@ import {
   updateAttendance,
   upsertAttendanceForToday,
 } from '../state/storage.js'
+import { usePortalDb } from '../state/portalDb.js'
 import { appendAttendanceEvent } from '../state/activityLog.js'
+import { playActivityCheckBell, prepareNotifyAudio } from '../utils/notifySound.js'
 import { ScoreBadge } from '../ui/ScoreBadge.jsx'
 import { WfhActivityLog } from '../ui/WfhActivityLog.jsx'
 import { EmployeeProfileView } from './EmployeeProfileView.jsx'
@@ -53,11 +55,11 @@ function EmployeeNav() {
 function ActivityCheckModal({ open, secondsLeft, value, onChange, onSubmit }) {
   if (!open) return null
   return (
-    <div className="modalOverlay">
-      <div className="modal">
+    <div className="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="wfh-check-title">
+      <div className="modal modalAlert">
         <div className="cardHeader">
           <div>
-            <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>
+            <div id="wfh-check-title" style={{ fontWeight: 650, color: 'var(--text-h)' }}>
               Activity Check (WFH Proof)
             </div>
             <div style={{ fontSize: 13, color: 'var(--text)' }}>
@@ -89,6 +91,7 @@ function ActivityCheckModal({ open, secondsLeft, value, onChange, onSubmit }) {
 }
 
 function AttendanceView({ session }) {
+  const { version } = usePortalDb()
   const [tick, setTick] = useState(0)
   const [punchOutTasks, setPunchOutTasks] = useState('')
   const [punchOutPlan, setPunchOutPlan] = useState('')
@@ -148,7 +151,11 @@ function AttendanceView({ session }) {
   useEffect(() => {
     applyRecord(loadTodayRecord())
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.id, date])
+  }, [session.id, date, version])
+
+  useEffect(() => {
+    if (checkOpen) playActivityCheckBell()
+  }, [checkOpen])
 
   function scheduleNextCheck({ first = false } = {}) {
     const min = USE_DEMO_TIMINGS ? DEMO_CHECK_MS_MIN : PROD_CHECK_MS_MIN
@@ -294,6 +301,7 @@ function AttendanceView({ session }) {
 
   function punchIn() {
     setError('')
+    prepareNotifyAudio()
     const existing = readAttendanceRecord(session.id, date) ||
       upsertAttendanceForToday({ empId: session.id, empName: session.name }).record
     if (existing.punchIn && !existing.punchOut) {
@@ -456,19 +464,17 @@ function AttendanceView({ session }) {
 }
 
 function LeavesView({ session }) {
+  const { db, version } = usePortalDb()
   const [type, setType] = useState('Sick Leave')
   const [from, setFrom] = useState(todayStr())
   const [to, setTo] = useState(todayStr())
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
-  const [refresh, setRefresh] = useState(0)
-  // eslint-disable-next-line no-unused-vars
-  const _ = refresh
 
-  const leaves = useMemo(() => {
-    const db = ensureDbSeeded()
-    return db.leaves.filter((l) => l.empId === session.id)
-  }, [session.id])
+  const leaves = useMemo(
+    () => db.leaves.filter((l) => l.empId.toUpperCase() === session.id.toUpperCase()),
+    [db, session.id, version],
+  )
 
   function apply() {
     setError('')
@@ -476,8 +482,7 @@ function LeavesView({ session }) {
       setError('Reason is required.')
       return
     }
-    const db = ensureDbSeeded()
-    db.leaves.unshift({
+    addLeave({
       id: `L-${Date.now()}`,
       empId: session.id,
       empName: session.name,
@@ -488,9 +493,7 @@ function LeavesView({ session }) {
       status: 'PENDING',
       appliedAt: nowIso(),
     })
-    writeDb(db)
     setReason('')
-    setRefresh((x) => x + 1)
   }
 
   return (

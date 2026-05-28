@@ -1,4 +1,6 @@
+import { useMemo } from 'react'
 import { buildDayActivityLog, buildEmployeeActivityHistory } from '../state/activityLog.js'
+import { usePortalDb } from '../state/portalDb.js'
 import { fmtDate, fmtTime } from '../utils/format.js'
 
 function statusClass(type, status) {
@@ -17,9 +19,11 @@ export function WfhActivityLog({
   title = 'WFH Activity Log',
   subtitle = 'Punch in/out, work updates, and activity checks',
 }) {
-  const entries = showHistory && empId
-    ? buildEmployeeActivityHistory(empId)
-    : buildDayActivityLog(record)
+  const { version } = usePortalDb()
+  const entries = useMemo(() => {
+    if (showHistory && empId) return buildEmployeeActivityHistory(empId)
+    return buildDayActivityLog(record)
+  }, [version, record, empId, showHistory])
 
   return (
     <div className="card">

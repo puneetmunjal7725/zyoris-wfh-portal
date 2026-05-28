@@ -1,11 +1,16 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getEmployeeById, writeSession } from '../state/storage.js'
+import { usePortalDb } from '../state/portalDb.js'
+import { writeSession } from '../state/storage.js'
 import { WfhActivityLog } from '../ui/WfhActivityLog.jsx'
 
 export function EmployeeProfileView({ session }) {
   const navigate = useNavigate()
-  const employee = useMemo(() => getEmployeeById(session.id), [session.id])
+  const { db, version } = usePortalDb()
+  const employee = useMemo(
+    () => db.employees.find((e) => e.id.toUpperCase() === session.id.toUpperCase()) || null,
+    [db, session.id, version],
+  )
 
   if (!employee) {
     return (
