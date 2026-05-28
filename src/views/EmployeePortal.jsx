@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { PortalShell } from '../ui/PortalShell.jsx'
 import {
   ensureDbSeeded,
   nowIso,
@@ -16,7 +17,7 @@ const DEMO_CHECK_MS_MIN = 3 * 60 * 1000
 const DEMO_CHECK_MS_MAX = 5 * 60 * 1000
 const PROD_CHECK_MS_MIN = 45 * 60 * 1000
 const PROD_CHECK_MS_MAX = 90 * 60 * 1000
-const USE_DEMO_TIMINGS = true
+const USE_DEMO_TIMINGS = false
 
 function randBetween(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
@@ -28,34 +29,29 @@ function fmtTime(iso) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
-function Topbar({ session }) {
+function EmployeeNav() {
   const navigate = useNavigate()
+  const linkClass = ({ isActive }) => `btn${isActive ? ' navLinkActive' : ''}`
+
   return (
-    <header className="topbar">
-      <div className="brand">
-        <div className="title">Zyoris Technology</div>
-        <div className="subtitle">
-          {session.name} • {session.id} • {session.role}
-        </div>
-      </div>
-      <div className="row">
-        <Link className="btn" to="/employee">
-          Attendance
-        </Link>
-        <Link className="btn" to="/employee/leaves">
-          Leaves
-        </Link>
-        <button
-          className="btn"
-          onClick={() => {
-            writeSession(null)
-            navigate('/login', { replace: true })
-          }}
-        >
-          Logout
-        </button>
-      </div>
-    </header>
+    <>
+      <NavLink className={linkClass} to="/employee" end>
+        Attendance
+      </NavLink>
+      <NavLink className={linkClass} to="/employee/leaves">
+        Leaves
+      </NavLink>
+      <button
+        className="btn"
+        type="button"
+        onClick={() => {
+          writeSession(null)
+          navigate('/login', { replace: true })
+        }}
+      >
+        Logout
+      </button>
+    </>
   )
 }
 
@@ -314,12 +310,6 @@ function AttendanceView({ session }) {
             </div>
           </div>
 
-          {isActiveShift ? (
-            <div style={{ marginTop: 12, fontSize: 13, color: 'var(--text)' }}>
-              WFH proof checks will appear randomly while you are punched in (demo: every 3–5 minutes).
-            </div>
-          ) : null}
-
           <div style={{ marginTop: 18 }} className="card">
             <div className="cardHeader">
               <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>Punch-out details</div>
@@ -536,14 +526,16 @@ export function EmployeePortal() {
   if (!session || session.kind !== 'employee') return <Navigate to="/login" replace />
 
   return (
-    <div className="appShell">
-      <Topbar session={session} />
+    <PortalShell
+      subtitle={`${session.name} · ${session.id} · ${session.role}`}
+      actions={<EmployeeNav />}
+    >
       <Routes>
         <Route path="/" element={<AttendanceView session={session} />} />
         <Route path="/leaves" element={<LeavesView session={session} />} />
         <Route path="*" element={<Navigate to="/employee" replace />} />
       </Routes>
-    </div>
+    </PortalShell>
   )
 }
 

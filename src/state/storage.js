@@ -29,23 +29,12 @@ export function writeDb(db) {
   localStorage.setItem(LS_KEY, JSON.stringify(db))
 }
 
-export function ensureDbSeeded({ seedDemoEmployees = true } = {}) {
+export function ensureDbSeeded() {
   const existing = readDb()
   if (existing) return existing
 
-  const demoEmployees = seedDemoEmployees
-    ? [
-        { id: 'E1001', name: 'Aarav Mehta', role: 'Engineer', password: 'pass123' },
-        { id: 'E1002', name: 'Diya Sharma', role: 'Engineer', password: 'pass123' },
-        { id: 'E1003', name: 'Kabir Singh', role: 'QA', password: 'pass123' },
-        { id: 'I2001', name: 'Meera Patel', role: 'Intern', password: 'pass123' },
-        { id: 'I2002', name: 'Rohan Gupta', role: 'Intern', password: 'pass123' },
-        { id: 'E1010', name: 'Sneha Iyer', role: 'HR', password: 'pass123' },
-      ]
-    : []
-
   const db = {
-    employees: demoEmployees,
+    employees: [],
     attendance: [],
     leaves: [],
   }

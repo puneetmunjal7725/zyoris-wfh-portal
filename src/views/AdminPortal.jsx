@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { PortalShell } from '../ui/PortalShell.jsx'
 import {
   computeScore,
   ensureDbSeeded,
@@ -19,35 +20,32 @@ function fmtTime(iso) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
-function Topbar() {
+function AdminNav() {
   const navigate = useNavigate()
+  const linkClass = ({ isActive }) => `btn${isActive ? ' navLinkActive' : ''}`
+
   return (
-    <header className="topbar">
-      <div className="brand">
-        <div className="title">Zyoris Technology</div>
-        <div className="subtitle">Admin Dashboard</div>
-      </div>
-      <div className="row">
-        <Link className="btn" to="/admin">
-          Overview
-        </Link>
-        <Link className="btn" to="/admin/employees">
-          Employees
-        </Link>
-        <Link className="btn" to="/admin/leaves">
-          Leaves
-        </Link>
-        <button
-          className="btn"
-          onClick={() => {
-            writeSession(null)
-            navigate('/login', { replace: true })
-          }}
-        >
-          Logout
-        </button>
-      </div>
-    </header>
+    <>
+      <NavLink className={linkClass} to="/admin" end>
+        Overview
+      </NavLink>
+      <NavLink className={linkClass} to="/admin/employees">
+        Employees
+      </NavLink>
+      <NavLink className={linkClass} to="/admin/leaves">
+        Leaves
+      </NavLink>
+      <button
+        className="btn"
+        type="button"
+        onClick={() => {
+          writeSession(null)
+          navigate('/login', { replace: true })
+        }}
+      >
+        Logout
+      </button>
+    </>
   )
 }
 
@@ -235,8 +233,8 @@ function Employees() {
       setError('ID, name, and password are required.')
       return
     }
-    if (nextId.toUpperCase() === 'ADMIN') {
-      setError('ADMIN is reserved.')
+    if (nextId.toUpperCase() === 'ADMIN' || nextId.includes('@')) {
+      setError('Enter a valid employee ID (not an email).')
       return
     }
     const db = ensureDbSeeded()
@@ -261,8 +259,7 @@ function Employees() {
     <div className="container">
       <div className="card" style={{ marginBottom: 14 }}>
         <div className="cardHeader">
-          <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>Add employee</div>
-          <span className="pill">Stored in localStorage</span>
+          <div className="cardHeaderTitle">Add employee</div>
         </div>
         <div className="cardBody">
           <div className="grid2">
@@ -352,7 +349,7 @@ function Leaves() {
       ...l,
       status,
       decidedAt: nowIso(),
-      decidedBy: 'ADMIN',
+      decidedBy: 'Admin',
     }))
     setRefresh((x) => x + 1)
   }
@@ -456,15 +453,14 @@ export function AdminPortal() {
   if (!session || session.kind !== 'admin') return <Navigate to="/login" replace />
 
   return (
-    <div className="appShell">
-      <Topbar />
+    <PortalShell subtitle="Admin Dashboard" actions={<AdminNav />}>
       <Routes>
         <Route path="/" element={<Overview />} />
         <Route path="/employees" element={<Employees />} />
         <Route path="/leaves" element={<Leaves />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>
-    </div>
+    </PortalShell>
   )
 }
 

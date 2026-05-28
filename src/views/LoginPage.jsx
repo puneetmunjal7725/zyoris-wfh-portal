@@ -1,37 +1,31 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ADMIN_EMAIL, ADMIN_PASSWORD } from '../config/auth.js'
 import { ensureDbSeeded, writeSession } from '../state/storage.js'
+import { PortalShell } from '../ui/PortalShell.jsx'
 
 export function LoginPage() {
   const navigate = useNavigate()
-  const [empId, setEmpId] = useState('')
+  const [loginId, setLoginId] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-
-  const hint = useMemo(
-    () => ({
-      admin: { id: 'ADMIN', password: 'zyoris@admin' },
-      employee: { password: 'pass123' },
-    }),
-    [],
-  )
 
   function onSubmit(e) {
     e.preventDefault()
     setError('')
 
-    const id = empId.trim()
+    const id = loginId.trim()
     if (!id || !password) {
-      setError('Enter your Employee ID and password.')
+      setError('Enter your email or employee ID and password.')
       return
     }
 
-    if (id.toUpperCase() === 'ADMIN') {
-      if (password === 'zyoris@admin') {
-        writeSession({ kind: 'admin', id: 'ADMIN', name: 'Admin' })
+    if (id.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      if (password === ADMIN_PASSWORD) {
+        writeSession({ kind: 'admin', email: ADMIN_EMAIL, name: 'Admin' })
         navigate('/admin', { replace: true })
       } else {
-        setError('Invalid admin password.')
+        setError('Invalid credentials.')
       }
       return
     }
@@ -39,11 +33,11 @@ export function LoginPage() {
     const db = ensureDbSeeded()
     const emp = db.employees.find((x) => x.id.toUpperCase() === id.toUpperCase())
     if (!emp) {
-      setError('Employee not found. Ask admin to add your ID.')
+      setError('Account not found. Contact your administrator.')
       return
     }
     if (emp.password !== password) {
-      setError('Invalid password.')
+      setError('Invalid credentials.')
       return
     }
 
@@ -52,35 +46,34 @@ export function LoginPage() {
   }
 
   return (
-    <div className="appShell">
-      <header className="topbar">
-        <div className="brand">
-          <div className="title">Zyoris Technology</div>
-          <div className="subtitle">WFH Attendance Portal</div>
+    <PortalShell subtitle="WFH Attendance Portal" mainClassName="containerNarrow">
+      <div className="loginHero">
+        <div className="badge">
+          <span className="badgeDot" />
+          Team access
         </div>
-        <span className="pill">LocalStorage Demo • No Backend</span>
-      </header>
+        <h1>
+          Work from <span className="accent">home</span>
+        </h1>
+        <p>Sign in to record attendance, activity checks, and leave requests.</p>
+      </div>
 
-      <main className="container">
-        <div className="card">
-          <div className="cardHeader">
-            <div>
-              <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>Login</div>
-              <div style={{ fontSize: 13, color: 'var(--text)' }}>
-                Admin: <code>{hint.admin.id}</code> / <code>{hint.admin.password}</code> • Demo
-                employees use <code>{hint.employee.password}</code>
-              </div>
-            </div>
+      <div className="card">
+        <div className="cardHeader">
+          <div>
+            <div className="cardHeaderTitle">Sign in</div>
+            <div className="cardHeaderSub">Use your work email or employee ID</div>
           </div>
-          <div className="cardBody">
-            <form onSubmit={onSubmit} className="grid2">
+        </div>
+        <div className="cardBody">
+          <form onSubmit={onSubmit}>
+            <div style={{ display: 'grid', gap: 14 }}>
               <div>
-                <div className="label">Employee ID</div>
+                <div className="label">Email or Employee ID</div>
                 <input
                   className="input"
-                  value={empId}
-                  onChange={(e) => setEmpId(e.target.value)}
-                  placeholder="E1001"
+                  value={loginId}
+                  onChange={(e) => setLoginId(e.target.value)}
                   autoComplete="username"
                 />
               </div>
@@ -91,21 +84,19 @@ export function LoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
                   autoComplete="current-password"
                 />
               </div>
-              <div className="row" style={{ gridColumn: '1 / -1', justifyContent: 'space-between' }}>
+              <div className="row" style={{ justifyContent: 'space-between', marginTop: 4 }}>
                 <button className="btn btnPrimary" type="submit">
                   Sign in
                 </button>
-                {error ? <span style={{ color: '#ef4444', fontSize: 13 }}>{error}</span> : null}
+                {error ? <span className="formError">{error}</span> : null}
               </div>
-            </form>
-          </div>
+            </div>
+          </form>
         </div>
-      </main>
-    </div>
+      </div>
+    </PortalShell>
   )
 }
-
