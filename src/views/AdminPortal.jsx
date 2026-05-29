@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { usePortalDb } from '../state/portalDb.js'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { PortalShell } from '../ui/PortalShell.jsx'
@@ -12,6 +12,7 @@ import {
   getDbMode,
   getLastSyncError,
   pushAllLocalToCloud,
+  refreshFromCloud,
   removeEmployee,
   todayStr,
   updateLeave,
@@ -23,6 +24,7 @@ import { EmployeeProfileEditor } from '../ui/EmployeeProfileEditor.jsx'
 import { RoleInput } from '../ui/RoleInput.jsx'
 import { fmtDate, fmtTime } from '../utils/format.js'
 import { isValidEmail } from '../utils/employee.js'
+import { normalizeDateStr } from '../utils/date.js'
 
 function AdminNav() {
   const navigate = useNavigate()
@@ -56,10 +58,32 @@ function AdminNav() {
 function Overview() {
   const { db, version } = usePortalDb()
   const date = todayStr()
+  const [refreshing, setRefreshing] = useState(false)
+
+  useEffect(() => {
+    if (getDbMode() !== 'cloud') return undefined
+    let cancelled = false
+    const pull = () => {
+      void refreshFromCloud().finally(() => {
+        if (!cancelled) setRefreshing(false)
+      })
+    }
+    pull()
+    const timer = window.setInterval(pull, 12000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') pull()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [])
 
   const { employees, todayAttendance, punchIns, byEmp, activityRows } = useMemo(() => {
     const employees = db.employees
-    const todayAttendance = db.attendance.filter((a) => a.date === date)
+    const todayAttendance = db.attendance.filter((a) => normalizeDateStr(a.date) === date)
     const punchIns = todayAttendance.filter((a) => a.punchIn)
     const byEmp = new Map()
     for (const a of todayAttendance) byEmp.set(a.empId, a)
@@ -88,9 +112,29 @@ function Overview() {
             <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>Today’s punch-ins</div>
             <div style={{ fontSize: 13, color: 'var(--text)' }}>{date}</div>
           </div>
-          <span className="pill">{punchIns.length} active/finished</span>
+          <div className="row rowKeep" style={{ gap: 8 }}>
+            <span className="pill">{punchIns.length} active/finished</span>
+            {getDbMode() === 'cloud' ? (
+              <button
+                type="button"
+                className="btn"
+                disabled={refreshing}
+                onClick={() => {
+                  setRefreshing(true)
+                  void refreshFromCloud().finally(() => setRefreshing(false))
+                }}
+              >
+                {refreshing ? 'Refreshing…' : 'Refresh from cloud'}
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="cardBody">
+          {getLastSyncError() ? (
+            <p className="formError" style={{ marginBottom: 12 }}>
+              {getLastSyncError()}
+            </p>
+          ) : null}
           {punchIns.length ? (
             <table className="table">
               <thead>

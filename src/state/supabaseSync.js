@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabase.js'
+import { normalizeDateStr } from '../utils/date.js'
 
 function employeeFromRow(r) {
   return {
@@ -32,7 +33,7 @@ function attendanceFromRow(r) {
   return {
     empId: r.emp_id,
     empName: r.emp_name,
-    date: r.date,
+    date: normalizeDateStr(r.date),
     punchIn: r.punch_in,
     punchOut: r.punch_out,
     tasks: r.tasks ?? '',
@@ -152,11 +153,33 @@ export async function deleteEmployeeRemote(empId) {
   if (error) throw error
 }
 
-export async function syncAttendanceRow(record) {
+export async function syncAttendanceRow(record, { employee } = {}) {
   if (!supabase) return
-  const { error } = await supabase
-    .from('attendance')
-    .upsert(attendanceToRow(record), { onConflict: 'emp_id,date' })
+
+  if (employee) {
+    await syncEmployeeRow(employee)
+  } else {
+    await syncEmployeeRow({
+      id: record.empId,
+      name: record.empName || record.empId,
+      role: 'Employee',
+      password: record.empId,
+      email: '',
+      address: '',
+      compensation: '',
+      compensationType: 'Salary',
+      photo: '',
+    })
+  }
+
+  let row = attendanceToRow({ ...record, date: normalizeDateStr(record.date) })
+  let { error } = await supabase.from('attendance').upsert(row, { onConflict: 'emp_id,date' })
+  if (error && /events|column/i.test(String(error.message))) {
+    const slim = { ...row }
+    delete slim.events
+    const retry = await supabase.from('attendance').upsert(slim, { onConflict: 'emp_id,date' })
+    error = retry.error
+  }
   if (error) throw error
 }
 

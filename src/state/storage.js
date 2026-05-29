@@ -1,5 +1,6 @@
 import { isSupabaseConfigured } from '../lib/supabase.js'
-import { countRecords, mergeDatabases } from './mergeDb.js'
+import { normalizeDateStr } from '../utils/date.js'
+import { countRecords, mergeDatabases, mergeForAdminView } from './mergeDb.js'
 import {
   deleteEmployeeRemote,
   loadAllFromSupabase,
@@ -77,7 +78,7 @@ export async function pushAllLocalToCloud() {
     lastSyncError = null
     return {
       ok: true,
-      message: `Uploaded ${local.employees.length} employees to cloud.`,
+      message: `Uploaded ${local.employees.length} employees, ${local.attendance.length} attendance days to cloud.`,
     }
   } catch (err) {
     lastSyncError = err?.message || 'Upload failed'
@@ -116,8 +117,8 @@ export function ensureDbSeeded() {
   return dbCache
 }
 
-async function pullCloudAndMerge() {
-  if (!isSupabaseConfigured() || syncInFlight) return
+async function pullCloudAndMerge({ adminView = false } = {}) {
+  if (!isSupabaseConfigured() || (syncInFlight && !adminView)) return dbCache || loadLocalDb()
   const local = loadLocalDb()
   let cloud
   try {
@@ -125,16 +126,23 @@ async function pullCloudAndMerge() {
   } catch (err) {
     lastSyncError = err?.message || 'Could not load cloud'
     notifyPortalDbChanged()
-    return
+    return local
   }
 
-  if (countRecords(cloud) === 0 && countRecords(local) > 0) {
-    return
+  if (countRecords(cloud) === 0 && countRecords(local) > 0 && !adminView) {
+    return local
   }
 
-  const merged = mergeDatabases(local, cloud)
+  const merged = adminView ? mergeForAdminView(local, cloud) : mergeDatabases(local, cloud)
   saveLocalDb(merged)
   lastSyncError = null
+  return merged
+}
+
+/** Admin: fetch latest punches from Supabase (call on overview + every few seconds). */
+export async function refreshFromCloud() {
+  if (!isSupabaseConfigured()) return ensureDbSeeded()
+  return pullCloudAndMerge({ adminView: true })
 }
 
 export async function initPortalDb() {
@@ -171,7 +179,7 @@ export async function initPortalDb() {
   }
 
   unsubscribeRealtime = subscribeSupabaseRealtime(() => {
-    void pullCloudAndMerge()
+    void pullCloudAndMerge({ adminView: false })
   })
 
   notifyPortalDbChanged()
@@ -213,9 +221,10 @@ function runCloudSync(promise) {
       notifyPortalDbChanged()
     })
     .catch((err) => {
-      lastSyncError =
-        err?.message ||
-        'Cloud sync failed. Data is saved on this device — use “Upload to cloud” in Admin.'
+      const msg = err?.message || String(err)
+      lastSyncError = msg.includes('foreign key')
+        ? 'Cloud sync failed: employee not on server. Admin → Upload all data to cloud, then punch again.'
+        : msg || 'Cloud sync failed. Data is saved on this device.'
       console.error('[Zyoris cloud sync]', err)
       notifyPortalDbChanged()
     })
@@ -224,7 +233,9 @@ function runCloudSync(promise) {
 export function upsertAttendanceForToday({ empId, empName }) {
   const db = ensureDbSeeded()
   const date = todayStr()
-  const idx = db.attendance.findIndex((a) => a.empId === empId && a.date === date)
+  const idx = db.attendance.findIndex(
+    (a) => a.empId === empId && normalizeDateStr(a.date) === date,
+  )
   if (idx >= 0) return { db, record: db.attendance[idx], index: idx }
 
   const record = {
@@ -241,18 +252,22 @@ export function upsertAttendanceForToday({ empId, empName }) {
   }
   db.attendance.unshift(record)
   persistDb(db)
-  if (isSupabaseConfigured()) runCloudSync(syncAttendanceRow(record))
+  if (isSupabaseConfigured()) runCloudSync(syncAttendanceWithEmployee(record))
   return { db, record, index: 0 }
 }
 
 export function readAttendanceRecord(empId, date = todayStr()) {
   const db = ensureDbSeeded()
-  return db.attendance.find((a) => a.empId === empId && a.date === date) || null
+  return (
+    db.attendance.find((a) => a.empId === empId && normalizeDateStr(a.date) === date) || null
+  )
 }
 
 export function updateAttendance(empId, date, updater) {
   const db = ensureDbSeeded()
-  const idx = db.attendance.findIndex((a) => a.empId === empId && a.date === date)
+  const idx = db.attendance.findIndex(
+    (a) => a.empId === empId && normalizeDateStr(a.date) === date,
+  )
   if (idx < 0) return null
   const next = updater({
     ...db.attendance[idx],
@@ -261,8 +276,13 @@ export function updateAttendance(empId, date, updater) {
   })
   db.attendance[idx] = next
   persistDb(db)
-  if (isSupabaseConfigured()) runCloudSync(syncAttendanceRow(next))
+  if (isSupabaseConfigured()) runCloudSync(syncAttendanceWithEmployee(next))
   return next
+}
+
+export function syncEmployeeToCloud(emp) {
+  if (!isSupabaseConfigured() || !emp) return
+  runCloudSync(syncEmployeeRow(emp))
 }
 
 export function addLeave(leave) {
@@ -306,6 +326,11 @@ export function getEmployeeById(empId) {
 
 export function findEmployeeForLogin(empId) {
   return getEmployeeById(empId)
+}
+
+function syncAttendanceWithEmployee(record) {
+  const emp = getEmployeeById(record.empId)
+  return syncAttendanceRow(record, { employee: emp || undefined })
 }
 
 export function updateEmployee(empId, updater) {

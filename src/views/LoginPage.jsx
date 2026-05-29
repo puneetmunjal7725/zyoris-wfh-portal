@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from '../config/auth.js'
-import { findEmployeeForLogin, writeSession } from '../state/storage.js'
+import { findEmployeeForLogin, syncEmployeeToCloud, writeSession } from '../state/storage.js'
 import { PortalShell } from '../ui/PortalShell.jsx'
 
 export function LoginPage() {
@@ -41,6 +41,7 @@ export function LoginPage() {
     }
 
     writeSession({ kind: 'employee', id: emp.id, name: emp.name, role: emp.role })
+    syncEmployeeToCloud(emp)
     navigate('/employee', { replace: true })
   }
 
