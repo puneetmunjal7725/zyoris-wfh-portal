@@ -333,6 +333,12 @@
   color: #fca5a5;
 }
 
+.tableWrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -526,5 +532,205 @@
 
   .profileDl {
     text-align: left;
+  }
+}
+
+/* ——— Mobile / small screens ——— */
+@media (max-width: 768px) {
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0.75rem max(16px, env(safe-area-inset-right)) 0.75rem max(16px, env(safe-area-inset-left));
+    gap: 12px;
+  }
+
+  .brand {
+    min-width: 0;
+  }
+
+  .brandTitle {
+    font-size: 1.15rem;
+  }
+
+  .brandSubtitle {
+    font-size: 0.72rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  .topbarActions {
+    width: 100%;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+
+  .topbarActions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .topbarActions .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 0.6rem 0.85rem;
+    font-size: 0.8rem;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 100%;
+    margin: 0.75rem auto 5rem;
+    padding: 0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+    box-sizing: border-box;
+  }
+
+  .containerNarrow {
+    width: 100%;
+    padding: 1.25rem max(16px, env(safe-area-inset-right)) 5rem max(16px, env(safe-area-inset-left));
+    min-height: calc(100svh - 120px);
+    box-sizing: border-box;
+  }
+
+  .card {
+    border-radius: 12px;
+  }
+
+  .cardHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px 14px;
+    gap: 8px;
+  }
+
+  .cardBody {
+    padding: 14px;
+  }
+
+  .cardHeader .pill,
+  .cardHeader .row {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .grid2 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .row:not(.rowKeep) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .row:not(.rowKeep) .btn,
+  .row:not(.rowKeep) .btnPrimary {
+    width: 100%;
+  }
+
+  .rowKeep {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .btnPrimary {
+    padding: 0.8rem 1rem;
+  }
+
+  .input,
+  .select,
+  .textarea {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .textarea {
+    min-height: 100px;
+  }
+
+  .cardBody:has(.table) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 12px;
+  }
+
+  .table {
+    min-width: 520px;
+  }
+
+  .table th,
+  .table td {
+    padding: 10px;
+    font-size: 0.82rem;
+  }
+
+  .logDetail {
+    max-width: none;
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .modalOverlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal {
+    width: 100%;
+    max-height: 92svh;
+    overflow-y: auto;
+    border-radius: 16px 16px 0 0;
+    border-bottom: none;
+  }
+
+  .modal .cardHeader,
+  .modal .cardBody {
+    padding: 14px 16px;
+  }
+
+  .cloudBadge {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    bottom: max(10px, env(safe-area-inset-bottom));
+    font-size: 0.65rem;
+    padding: 5px 12px;
+    white-space: nowrap;
+    max-width: calc(100% - 32px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .profileBody,
+  .profileEditGrid {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .profileName {
+    font-size: 1.45rem;
+  }
+
+  .loginHero h1 {
+    font-size: 1.85rem;
+  }
+
+  .formSections {
+    gap: 16px;
+  }
+}
+
+@media (max-width: 380px) {
+  .topbarActions .btn {
+    font-size: 0.75rem;
+    padding: 0.55rem 0.7rem;
   }
 }

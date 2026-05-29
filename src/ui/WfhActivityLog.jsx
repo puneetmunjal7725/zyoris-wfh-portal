@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { buildDayActivityLog, buildEmployeeActivityHistory } from '../state/activityLog.js'
 import { usePortalDb } from '../state/portalDb.js'
 import { fmtDate, fmtTime } from '../utils/format.js'
+import { TableWrap } from './TableWrap.jsx'
 
 function statusClass(type, status) {
   if (type === 'PUNCH_IN') return 'pill scoreGreen'
@@ -36,6 +37,7 @@ export function WfhActivityLog({
       </div>
       <div className="cardBody">
         {entries.length ? (
+          <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -60,6 +62,7 @@ export function WfhActivityLog({
               ))}
             </tbody>
           </table>
+          </TableWrap>
         ) : (
           <div style={{ fontSize: 13, color: 'var(--text)' }}>{emptyMessage}</div>
         )}

@@ -76,7 +76,7 @@ function ActivityCheckModal({ open, secondsLeft, value, onChange, onSubmit }) {
             onChange={(e) => onChange(e.target.value)}
             placeholder="Example: fixing login bug, writing tests, reviewing PR..."
           />
-          <div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}>
+          <div className="row rowKeep" style={{ justifyContent: 'space-between', marginTop: 12, gap: 10 }}>
             <span style={{ fontSize: 13, color: 'var(--text)' }}>
               Tip: keep it short but specific.
             </span>
@@ -381,7 +381,7 @@ function AttendanceView({ session }) {
             <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>Today</div>
             <div style={{ fontSize: 13, color: 'var(--text)' }}>{date}</div>
           </div>
-          <div className="row">
+          <div className="row rowKeep">
             <span className="pill">Live clock: {liveClock}</span>
             <ScoreBadge checks={current.checks} />
           </div>
@@ -390,7 +390,7 @@ function AttendanceView({ session }) {
           <div className="grid2">
             <div className="card" style={{ boxShadow: 'none' }}>
               <div className="cardBody">
-                <div className="row" style={{ justifyContent: 'space-between' }}>
+                <div className="row rowKeep" style={{ justifyContent: 'space-between' }}>
                   <div>
                     <div className="label">Punch In</div>
                     <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>{fmtTime(current.punchIn)}</div>
@@ -404,7 +404,7 @@ function AttendanceView({ session }) {
 
             <div className="card" style={{ boxShadow: 'none' }}>
               <div className="cardBody">
-                <div className="row" style={{ justifyContent: 'space-between' }}>
+                <div className="row rowKeep" style={{ justifyContent: 'space-between' }}>
                   <div>
                     <div className="label">Punch Out</div>
                     <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>{fmtTime(current.punchOut)}</div>
@@ -549,6 +549,7 @@ function LeavesView({ session }) {
         </div>
         <div className="cardBody">
           {leaves.length ? (
+            <div className="tableWrap">
             <table className="table">
               <thead>
                 <tr>
@@ -573,6 +574,7 @@ function LeavesView({ session }) {
                 ))}
               </tbody>
             </table>
+            </div>
           ) : (
             <div style={{ fontSize: 13, color: 'var(--text)' }}>No leave requests yet.</div>
           )}
