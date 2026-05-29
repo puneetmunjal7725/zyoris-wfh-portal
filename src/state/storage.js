@@ -1,4 +1,5 @@
 import { isSupabaseConfigured } from '../lib/supabase.js'
+import { countRecords, mergeDatabases } from './mergeDb.js'
 import {
   deleteEmployeeRemote,
   loadAllFromSupabase,
@@ -19,45 +20,7 @@ export function notifyPortalDbChanged() {
 let dbCache = null
 let unsubscribeRealtime = null
 let lastSyncError = null
-
-function countRecords(db) {
-  if (!db) return 0
-  return (db.employees?.length || 0) + (db.attendance?.length || 0) + (db.leaves?.length || 0)
-}
-
-function backupDbToLocal(db) {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(db))
-  } catch {
-    /* storage full — ignore */
-  }
-}
-
-export function getLastSyncError() {
-  return lastSyncError
-}
-
-export function readLocalBackupDb() {
-  const raw = localStorage.getItem(LS_KEY)
-  if (!raw) return null
-  return safeParse(raw, null)
-}
-
-export async function restoreBrowserBackupToCloud() {
-  if (!isSupabaseConfigured()) return { ok: false, message: 'Cloud mode is not enabled.' }
-  const localDb = readLocalBackupDb()
-  if (!localDb || countRecords(localDb) === 0) {
-    return { ok: false, message: 'No backup found in this browser.' }
-  }
-  dbCache = await migrateLocalDbToSupabase(localDb)
-  backupDbToLocal(dbCache)
-  lastSyncError = null
-  notifyPortalDbChanged()
-  return {
-    ok: true,
-    message: `Restored ${dbCache.employees.length} employees to cloud.`,
-  }
-}
+let syncInFlight = false
 
 function safeParse(json, fallback) {
   try {
@@ -67,8 +30,66 @@ function safeParse(json, fallback) {
   }
 }
 
+function emptyDb() {
+  return { employees: [], attendance: [], leaves: [] }
+}
+
+/** Always read from browser storage first — never show blank while cloud loads. */
+export function loadLocalDb() {
+  const raw = localStorage.getItem(LS_KEY)
+  if (!raw) return emptyDb()
+  return safeParse(raw, emptyDb()) || emptyDb()
+}
+
+function saveLocalDb(db) {
+  dbCache = db
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(db))
+  } catch {
+    /* quota */
+  }
+  notifyPortalDbChanged()
+}
+
 export function getDbMode() {
   return isSupabaseConfigured() ? 'cloud' : 'local'
+}
+
+export function getLastSyncError() {
+  return lastSyncError
+}
+
+export function readLocalBackupDb() {
+  return loadLocalDb()
+}
+
+export async function pushAllLocalToCloud() {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, message: 'Cloud is not configured.' }
+  }
+  const local = loadLocalDb()
+  if (countRecords(local) === 0) {
+    return { ok: false, message: 'No data in this browser to upload.' }
+  }
+  syncInFlight = true
+  try {
+    await migrateLocalDbToSupabase(local)
+    lastSyncError = null
+    return {
+      ok: true,
+      message: `Uploaded ${local.employees.length} employees to cloud.`,
+    }
+  } catch (err) {
+    lastSyncError = err?.message || 'Upload failed'
+    return { ok: false, message: lastSyncError }
+  } finally {
+    syncInFlight = false
+    notifyPortalDbChanged()
+  }
+}
+
+export async function restoreBrowserBackupToCloud() {
+  return pushAllLocalToCloud()
 }
 
 export function todayStr(d = new Date()) {
@@ -83,46 +104,37 @@ export function nowIso(d = new Date()) {
 }
 
 export function readDb() {
-  if (dbCache) return dbCache
-  const raw = localStorage.getItem(LS_KEY)
-  if (!raw) return null
-  return safeParse(raw, null)
-}
-
-function writeDbLocal(db) {
-  localStorage.setItem(LS_KEY, JSON.stringify(db))
-  dbCache = db
-  notifyPortalDbChanged()
+  return dbCache || loadLocalDb()
 }
 
 export function writeDb(db) {
-  if (isSupabaseConfigured()) {
-    dbCache = db
-    notifyPortalDbChanged()
-    return
-  }
-  writeDbLocal(db)
-}
-
-function emptyDb() {
-  return { employees: [], attendance: [], leaves: [] }
-}
-
-function ensureDbSeededLocal() {
-  const existing = readDb()
-  if (existing) {
-    dbCache = existing
-    return existing
-  }
-  const db = emptyDb()
-  writeDbLocal(db)
-  return db
+  saveLocalDb(db)
 }
 
 export function ensureDbSeeded() {
-  if (dbCache) return dbCache
-  if (isSupabaseConfigured()) return emptyDb()
-  return ensureDbSeededLocal()
+  if (!dbCache) dbCache = loadLocalDb()
+  return dbCache
+}
+
+async function pullCloudAndMerge() {
+  if (!isSupabaseConfigured() || syncInFlight) return
+  const local = loadLocalDb()
+  let cloud
+  try {
+    cloud = await loadAllFromSupabase()
+  } catch (err) {
+    lastSyncError = err?.message || 'Could not load cloud'
+    notifyPortalDbChanged()
+    return
+  }
+
+  if (countRecords(cloud) === 0 && countRecords(local) > 0) {
+    return
+  }
+
+  const merged = mergeDatabases(local, cloud)
+  saveLocalDb(merged)
+  lastSyncError = null
 }
 
 export async function initPortalDb() {
@@ -131,55 +143,37 @@ export async function initPortalDb() {
     unsubscribeRealtime = null
   }
 
-  if (isSupabaseConfigured()) {
-    const localRaw = localStorage.getItem(LS_KEY)
-    const localDb = localRaw ? safeParse(localRaw, null) : null
-    const hasLocal =
-      localDb &&
-      ((localDb.employees?.length || 0) > 0 ||
-        (localDb.attendance?.length || 0) > 0 ||
-        (localDb.leaves?.length || 0) > 0)
+  dbCache = loadLocalDb()
+  notifyPortalDbChanged()
 
-    try {
-      dbCache = await loadAllFromSupabase()
-    } catch (err) {
-      if (hasLocal) {
-        dbCache = localDb
-        backupDbToLocal(dbCache)
-        lastSyncError = err?.message || 'Could not load cloud data. Using browser backup.'
-      } else {
-        throw err
-      }
-    }
-
-    const cloudEmpty = countRecords(dbCache) === 0
-    const localRicher = hasLocal && countRecords(localDb) > countRecords(dbCache)
-
-    if (hasLocal && (cloudEmpty || localRicher)) {
-      dbCache = await migrateLocalDbToSupabase(localDb)
-      backupDbToLocal(dbCache)
-      lastSyncError = null
-    }
-
-    unsubscribeRealtime = subscribeSupabaseRealtime(async () => {
-      try {
-        const next = await loadAllFromSupabase()
-        const prevCount = countRecords(dbCache)
-        const nextCount = countRecords(next)
-        if (nextCount === 0 && prevCount > 0) return
-        dbCache = next
-        backupDbToLocal(dbCache)
-        notifyPortalDbChanged()
-      } catch {
-        /* ignore transient network errors */
-      }
-    })
-
-    notifyPortalDbChanged()
+  if (!isSupabaseConfigured()) {
     return dbCache
   }
 
-  dbCache = ensureDbSeededLocal()
+  try {
+    const cloud = await loadAllFromSupabase()
+    const merged = mergeDatabases(dbCache, cloud)
+    saveLocalDb(merged)
+
+    if (countRecords(cloud) < countRecords(merged)) {
+      syncInFlight = true
+      try {
+        await migrateLocalDbToSupabase(merged)
+        lastSyncError = null
+      } catch (err) {
+        lastSyncError = err?.message || 'Cloud upload failed — data safe on this device.'
+      } finally {
+        syncInFlight = false
+      }
+    }
+  } catch (err) {
+    lastSyncError = err?.message || 'Cloud unavailable — using data saved on this device.'
+  }
+
+  unsubscribeRealtime = subscribeSupabaseRealtime(() => {
+    void pullCloudAndMerge()
+  })
+
   notifyPortalDbChanged()
   return dbCache
 }
@@ -208,10 +202,7 @@ export function scoreTone(score) {
 }
 
 function persistDb(db) {
-  dbCache = db
-  backupDbToLocal(db)
-  if (isSupabaseConfigured()) notifyPortalDbChanged()
-  else notifyPortalDbChanged()
+  saveLocalDb(db)
 }
 
 function runCloudSync(promise) {
@@ -219,9 +210,12 @@ function runCloudSync(promise) {
   void promise
     .then(() => {
       lastSyncError = null
+      notifyPortalDbChanged()
     })
     .catch((err) => {
-      lastSyncError = err?.message || 'Cloud save failed. Data is kept in this browser.'
+      lastSyncError =
+        err?.message ||
+        'Cloud sync failed. Data is saved on this device — use “Upload to cloud” in Admin.'
       console.error('[Zyoris cloud sync]', err)
       notifyPortalDbChanged()
     })
@@ -253,7 +247,6 @@ export function upsertAttendanceForToday({ empId, empName }) {
 
 export function readAttendanceRecord(empId, date = todayStr()) {
   const db = ensureDbSeeded()
-  if (!db?.attendance) return null
   return db.attendance.find((a) => a.empId === empId && a.date === date) || null
 }
 

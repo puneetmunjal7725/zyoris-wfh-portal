@@ -9,10 +9,10 @@ import {
   getEmployeeById,
   nowIso,
   readSession,
+  getDbMode,
   getLastSyncError,
-  readLocalBackupDb,
+  pushAllLocalToCloud,
   removeEmployee,
-  restoreBrowserBackupToCloud,
   todayStr,
   updateLeave,
   writeSession,
@@ -215,42 +215,49 @@ function Overview() {
   )
 }
 
-function DataRecoveryBanner() {
-  const { version } = usePortalDb()
+function CloudSyncPanel() {
+  const { db, version } = usePortalDb()
   const [msg, setMsg] = useState('')
   const syncErr = getLastSyncError()
-  const backup = readLocalBackupDb()
-  const backupCount = backup?.employees?.length || 0
-  const showRestore = backupCount > 0
+  const isCloud = getDbMode() === 'cloud'
+  const localCount = db.employees.length
 
-  if (!showRestore && !syncErr) return null
+  if (!isCloud) return null
 
   return (
-    <div className="card" style={{ marginBottom: 14, borderColor: 'rgba(234, 179, 8, 0.45)' }}>
+    <div className="card" style={{ marginBottom: 14, borderColor: 'rgba(41, 121, 255, 0.35)' }}>
+      <div className="cardHeader">
+        <div className="cardHeaderTitle">Cloud sync</div>
+        <span className="pill">{localCount} employees on this device</span>
+      </div>
       <div className="cardBody">
+        <p style={{ fontSize: 13, color: 'var(--text)', margin: '0 0 12px' }}>
+          Data is saved on this browser first, then copied to Supabase. Refresh will not erase employees
+          anymore.
+        </p>
         {syncErr ? (
           <p style={{ fontSize: 13, color: '#fbbf24', margin: '0 0 10px' }}>
-            Cloud save warning: {syncErr}. Run email column SQL in Supabase if you have not yet.
+            {syncErr}
+            <br />
+            Run in Supabase SQL:{' '}
+            <code style={{ fontSize: 12 }}>alter table employees add column if not exists email text;</code>
           </p>
-        ) : null}
-        {showRestore ? (
-          <>
-            <p style={{ fontSize: 13, color: 'var(--text)', margin: '0 0 10px' }}>
-              Browser backup has <b>{backupCount}</b> employee(s). Use this if data disappeared after refresh.
-            </p>
-            <button
-              type="button"
-              className="btn btnPrimary"
-              onClick={async () => {
-                setMsg('Restoring…')
-                const result = await restoreBrowserBackupToCloud()
-                setMsg(result.message)
-              }}
-            >
-              Restore backup to cloud
-            </button>
-          </>
-        ) : null}
+        ) : (
+          <p style={{ fontSize: 13, color: 'var(--green, #4ade80)', margin: '0 0 10px' }}>
+            Last sync OK (or pending).
+          </p>
+        )}
+        <button
+          type="button"
+          className="btn btnPrimary"
+          onClick={async () => {
+            setMsg('Uploading to cloud…')
+            const result = await pushAllLocalToCloud()
+            setMsg(result.message)
+          }}
+        >
+          Upload all data to cloud
+        </button>
         {msg ? <p style={{ fontSize: 13, color: 'var(--text-h)', marginTop: 10 }}>{msg}</p> : null}
       </div>
     </div>
@@ -312,7 +319,7 @@ function Employees() {
 
   return (
     <div className="container">
-      <DataRecoveryBanner key={version} />
+      <CloudSyncPanel key={version} />
       <div className="card" style={{ marginBottom: 14 }}>
         <div className="cardHeader">
           <div className="cardHeaderTitle">Add employee</div>
