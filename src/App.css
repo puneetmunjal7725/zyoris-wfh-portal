@@ -179,6 +179,37 @@
   flex-wrap: wrap;
 }
 
+.formSections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.formSection {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.formSection:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.formSectionTitle {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--blue-light);
+  margin-bottom: 12px;
+}
+
+.formHint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -327,48 +327,74 @@ function Employees() {
           <div className="cardHeaderTitle">Add employee</div>
         </div>
         <div className="cardBody">
-          <div className="grid2">
-            <div>
-              <div className="label">Employee ID</div>
-              <input className="input" value={id} onChange={(e) => setId(e.target.value)} placeholder="E1050" />
-            </div>
-            <div>
-              <div className="label">Name</div>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
-            </div>
-            <div>
-              <div className="label">Work email</div>
-              <input
-                className="input"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@zyoris.com"
-                autoComplete="email"
-              />
-            </div>
-            <div>
-              <div className="label">Role</div>
-              <RoleInput value={role} onChange={setRole} placeholder="e.g. Designer, Lead, Intern…" />
-              <div style={{ fontSize: 12, color: 'var(--text)', marginTop: 6 }}>
-                Type any role — suggestions are optional
+          <div className="formSections">
+            <section className="formSection">
+              <div className="formSectionTitle">Employee details</div>
+              <div className="grid2">
+                <div>
+                  <div className="label">Employee ID</div>
+                  <input
+                    className="input"
+                    value={id}
+                    onChange={(e) => setId(e.target.value)}
+                    placeholder="E1050"
+                    autoComplete="off"
+                  />
+                </div>
+                <div>
+                  <div className="label">Full name</div>
+                  <input
+                    className="input"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Full name"
+                    autoComplete="name"
+                  />
+                </div>
               </div>
-            </div>
-            <div>
-              <div className="label">Password</div>
-              <input
-                className="input"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Set password"
-              />
-            </div>
-            <div className="row" style={{ gridColumn: '1 / -1', justifyContent: 'space-between' }}>
-              <button className="btn btnPrimary" onClick={add}>
+            </section>
+
+            <section className="formSection">
+              <div className="formSectionTitle">Login credentials</div>
+              <div className="grid2">
+                <div>
+                  <div className="label">Work email</div>
+                  <input
+                    className="input"
+                    type="email"
+                    name="employee-work-email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@zyoris.com"
+                    autoComplete="email"
+                  />
+                </div>
+                <div>
+                  <div className="label">Password</div>
+                  <input
+                    className="input"
+                    type="password"
+                    name="employee-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Set password"
+                    autoComplete="new-password"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="formSection">
+              <div className="formSectionTitle">Role</div>
+              <RoleInput value={role} onChange={setRole} placeholder="e.g. Engineer, Designer, Intern…" />
+              <div className="formHint">Type any job title — pick a suggestion or write your own</div>
+            </section>
+
+            <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+              <button type="button" className="btn btnPrimary" onClick={add}>
                 Add employee
               </button>
-              {error ? <span style={{ color: '#ef4444', fontSize: 13 }}>{error}</span> : null}
+              {error ? <span className="formError">{error}</span> : null}
             </div>
           </div>
         </div>

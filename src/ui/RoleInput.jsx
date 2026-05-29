@@ -8,10 +8,15 @@ export function RoleInput({ value, onChange, placeholder = 'Type any role…' })
       <input
         className="input"
         list={listId}
+        name="employee-role"
+        type="text"
+        inputMode="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete="off"
+        data-lpignore="true"
+        data-form-type="other"
       />
       <datalist id={listId}>
         {ROLE_SUGGESTIONS.map((r) => (
