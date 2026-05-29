@@ -20,6 +20,7 @@ import {
 import { buildDayActivityLog } from '../state/activityLog.js'
 import { ScoreBadge } from '../ui/ScoreBadge.jsx'
 import { EmployeeProfileEditor } from '../ui/EmployeeProfileEditor.jsx'
+import { RoleInput } from '../ui/RoleInput.jsx'
 import { fmtDate, fmtTime } from '../utils/format.js'
 import { isValidEmail } from '../utils/employee.js'
 
@@ -280,8 +281,9 @@ function Employees() {
   function add() {
     setError('')
     const nextId = id.trim()
-    if (!nextId || !name.trim() || !password) {
-      setError('ID, name, and password are required.')
+    const nextRole = role.trim()
+    if (!nextId || !name.trim() || !password || !nextRole) {
+      setError('ID, name, role, and password are required.')
       return
     }
     if (nextId.toUpperCase() === 'ADMIN' || nextId.includes('@')) {
@@ -305,7 +307,7 @@ function Employees() {
       setError('This email is already used by another employee.')
       return
     }
-    addEmployee({ id: nextId, name: name.trim(), email: nextEmail, role, password })
+    addEmployee({ id: nextId, name: name.trim(), email: nextEmail, role: nextRole, password })
     setId('')
     setName('')
     setEmail('')
@@ -347,13 +349,10 @@ function Employees() {
             </div>
             <div>
               <div className="label">Role</div>
-              <select className="select" value={role} onChange={(e) => setRole(e.target.value)}>
-                <option>Engineer</option>
-                <option>QA</option>
-                <option>Intern</option>
-                <option>HR</option>
-                <option>Manager</option>
-              </select>
+              <RoleInput value={role} onChange={setRole} placeholder="e.g. Designer, Lead, Intern…" />
+              <div style={{ fontSize: 12, color: 'var(--text)', marginTop: 6 }}>
+                Type any role — suggestions are optional
+              </div>
             </div>
             <div>
               <div className="label">Password</div>

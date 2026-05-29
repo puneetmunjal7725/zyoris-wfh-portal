@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { ensureDbSeeded, updateEmployee } from '../state/storage.js'
 import { isValidEmail, PAY_TYPES } from '../utils/employee.js'
+import { RoleInput } from './RoleInput.jsx'
 
 export function EmployeeProfileEditor({ employee, onSaved, onCancel }) {
   const [email, setEmail] = useState(employee.email || '')
+  const [role, setRole] = useState(employee.role || 'Engineer')
   const [address, setAddress] = useState(employee.address || '')
   const [compensation, setCompensation] = useState(employee.compensation || '')
   const [compensationType, setCompensationType] = useState(employee.compensationType || 'Salary')
@@ -44,9 +46,15 @@ export function EmployeeProfileEditor({ employee, onSaved, onCancel }) {
       setError('This email is already used by another employee.')
       return
     }
+    const nextRole = role.trim()
+    if (!nextRole) {
+      setError('Role is required.')
+      return
+    }
     updateEmployee(employee.id, (e) => ({
       ...e,
       email: nextEmail,
+      role: nextRole,
       address: address.trim(),
       compensation: compensation.trim(),
       compensationType,
@@ -87,6 +95,10 @@ export function EmployeeProfileEditor({ employee, onSaved, onCancel }) {
                 placeholder="name@company.com"
                 autoComplete="email"
               />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div className="label">Role</div>
+              <RoleInput value={role} onChange={setRole} />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <div className="label">Address</div>
