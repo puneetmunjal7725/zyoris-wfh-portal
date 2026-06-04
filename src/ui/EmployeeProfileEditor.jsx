@@ -29,7 +29,7 @@ export function EmployeeProfileEditor({ employee, onSaved, onCancel }) {
     reader.readAsDataURL(file)
   }
 
-  function save() {
+  async function save() {
     setError('')
     const nextEmail = email.trim()
     if (!isValidEmail(nextEmail)) {
@@ -51,16 +51,20 @@ export function EmployeeProfileEditor({ employee, onSaved, onCancel }) {
       setError('Role is required.')
       return
     }
-    updateEmployee(employee.id, (e) => ({
-      ...e,
-      email: nextEmail,
-      role: nextRole,
-      address: address.trim(),
-      compensation: compensation.trim(),
-      compensationType,
-      photo,
-    }))
-    onSaved()
+    try {
+      await updateEmployee(employee.id, (e) => ({
+        ...e,
+        email: nextEmail,
+        role: nextRole,
+        address: address.trim(),
+        compensation: compensation.trim(),
+        compensationType,
+        photo,
+      }))
+      onSaved()
+    } catch (err) {
+      setError(err?.message || 'Could not save profile.')
+    }
   }
 
   return (

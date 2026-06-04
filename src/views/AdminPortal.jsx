@@ -25,6 +25,9 @@ import { RoleInput } from '../ui/RoleInput.jsx'
 import { fmtDate, fmtTime } from '../utils/format.js'
 import { isValidEmail } from '../utils/employee.js'
 import { normalizeDateStr } from '../utils/date.js'
+import { AdminAttendanceHistory } from './AdminAttendanceHistory.jsx'
+import { AdminMessagesView } from './AdminMessagesView.jsx'
+import { AdminMessageAlert } from '../ui/PortalNotifications.jsx'
 
 function AdminNav() {
   const navigate = useNavigate()
@@ -40,6 +43,12 @@ function AdminNav() {
       </NavLink>
       <NavLink className={linkClass} to="/admin/leaves">
         Leaves
+      </NavLink>
+      <NavLink className={linkClass} to="/admin/attendance-history">
+        Attendance
+      </NavLink>
+      <NavLink className={linkClass} to="/admin/messages">
+        Messages <AdminMessageAlert />
       </NavLink>
       <button
         className="btn"
@@ -277,8 +286,8 @@ function CloudSyncPanel() {
       </div>
       <div className="cardBody">
         <p style={{ fontSize: 13, color: 'var(--text)', margin: '0 0 12px' }}>
-          Data is saved on this browser first, then copied to Supabase. Refresh will not erase employees
-          anymore.
+          Supabase is the single source of truth. All devices load from the cloud every 8 seconds and on
+          real-time updates.
         </p>
         {syncErr ? (
           <p style={{ fontSize: 13, color: '#fbbf24', margin: '0 0 10px' }}>
@@ -322,7 +331,9 @@ function Employees() {
   const employees = useMemo(() => db.employees, [db, version])
   const editingEmployee = editingId ? getEmployeeById(editingId) : null
 
-  function add() {
+  const [saving, setSaving] = useState(false)
+
+  async function add() {
     setError('')
     const nextId = id.trim()
     const nextRole = role.trim()
@@ -351,15 +362,22 @@ function Employees() {
       setError('This email is already used by another employee.')
       return
     }
-    addEmployee({ id: nextId, name: name.trim(), email: nextEmail, role: nextRole, password })
-    setId('')
-    setName('')
-    setEmail('')
-    setPassword('')
+    setSaving(true)
+    try {
+      await addEmployee({ id: nextId, name: name.trim(), email: nextEmail, role: nextRole, password })
+      setId('')
+      setName('')
+      setEmail('')
+      setPassword('')
+    } catch (err) {
+      setError(err?.message || 'Could not add employee.')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  function del(empId) {
-    removeEmployee(empId)
+  async function del(empId) {
+    await removeEmployee(empId)
     if (editingId === empId) setEditingId(null)
   }
 
@@ -435,8 +453,8 @@ function Employees() {
             </section>
 
             <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-              <button type="button" className="btn btnPrimary" onClick={add}>
-                Add employee
+              <button type="button" className="btn btnPrimary" onClick={add} disabled={saving}>
+                {saving ? 'Saving…' : 'Add employee'}
               </button>
               {error ? <span className="formError">{error}</span> : null}
             </div>
@@ -502,8 +520,8 @@ function Leaves() {
   const leaves = useMemo(() => db.leaves, [db, version])
   const pending = useMemo(() => leaves.filter((l) => l.status === 'PENDING'), [leaves])
 
-  function decide(leaveId, status) {
-    updateLeave(leaveId, (l) => ({
+  async function decide(leaveId, status) {
+    await updateLeave(leaveId, (l) => ({
       ...l,
       status,
       decidedAt: nowIso(),
@@ -613,6 +631,8 @@ export function AdminPortal() {
         <Route path="/" element={<Overview />} />
         <Route path="/employees" element={<Employees />} />
         <Route path="/leaves" element={<Leaves />} />
+        <Route path="/attendance-history" element={<AdminAttendanceHistory />} />
+        <Route path="/messages" element={<AdminMessagesView />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>
     </PortalShell>

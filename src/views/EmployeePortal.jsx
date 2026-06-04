@@ -4,6 +4,7 @@ import { PortalShell } from '../ui/PortalShell.jsx'
 import {
   addLeave,
   nowIso,
+  notifyPunch,
   readAttendanceRecord,
   readSession,
   todayStr,
@@ -13,9 +14,13 @@ import {
 import { usePortalDb } from '../state/portalDb.js'
 import { appendAttendanceEvent } from '../state/activityLog.js'
 import { playActivityCheckBell, prepareNotifyAudio } from '../utils/notifySound.js'
+import { isOnBreak, computeWorkingMs, formatDuration } from '../utils/attendanceCalc.js'
 import { ScoreBadge } from '../ui/ScoreBadge.jsx'
 import { WfhActivityLog } from '../ui/WfhActivityLog.jsx'
+import { EmployeeNavExtras, EmployeeImportantMessageModal } from '../ui/PortalNotifications.jsx'
 import { EmployeeProfileView } from './EmployeeProfileView.jsx'
+import { EmployeeHistoryView } from './EmployeeHistoryView.jsx'
+import { EmployeeMessagesView } from './EmployeeMessagesView.jsx'
 
 const DEMO_CHECK_MS_MIN = 3 * 60 * 1000
 const DEMO_CHECK_MS_MAX = 5 * 60 * 1000
@@ -45,9 +50,7 @@ function EmployeeNav() {
       <NavLink className={linkClass} to="/employee/leaves">
         Leaves
       </NavLink>
-      <NavLink className={linkClass} to="/employee/profile">
-        My Profile
-      </NavLink>
+      <EmployeeNavExtras />
     </>
   )
 }
@@ -97,6 +100,7 @@ function AttendanceView({ session }) {
   const [punchOutPlan, setPunchOutPlan] = useState('')
   const [punchOutBlocker, setPunchOutBlocker] = useState('')
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
 
   const [checkOpen, setCheckOpen] = useState(false)
   const [checkSeconds, setCheckSeconds] = useState(180)
@@ -126,9 +130,17 @@ function AttendanceView({ session }) {
     return next
   }
 
-  function mutateAttendance(updater) {
-    const next = updateAttendance(session.id, date, updater)
-    return applyRecord(next)
+  async function mutateAttendance(updater) {
+    setBusy(true)
+    try {
+      const next = await updateAttendance(session.id, date, updater)
+      return applyRecord(next)
+    } catch (err) {
+      setError(err?.message || 'Could not save to cloud. Try again.')
+      return null
+    } finally {
+      setBusy(false)
+    }
   }
 
   function cloneRecord(record) {
@@ -176,7 +188,7 @@ function AttendanceView({ session }) {
 
     // Add check entry immediately; will be marked responded on submit
     const at = nowIso()
-    mutateAttendance((a) => {
+    void mutateAttendance((a) => {
       const checks = Array.isArray(a.checks) ? a.checks.slice() : []
       checks.push({ time: at, responded: false, update: '' })
       let next = { ...a, checks }
@@ -197,7 +209,7 @@ function AttendanceView({ session }) {
           window.clearInterval(checkTimerRef.current)
           checkTimerRef.current = null
           checkActiveRef.current = false
-          mutateAttendance((a) => {
+          void mutateAttendance((a) => {
             const checks = Array.isArray(a.checks) ? a.checks.slice() : []
             let missedTime = null
             for (let i = checks.length - 1; i >= 0; i--) {
@@ -258,11 +270,11 @@ function AttendanceView({ session }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActiveShift])
 
-  function onSubmitCheck() {
+  async function onSubmitCheck() {
     const txt = checkText.trim()
     if (txt.length < 5) return
 
-    const updated = mutateAttendance((a) => {
+    const updated = await mutateAttendance((a) => {
       const checks = Array.isArray(a.checks) ? a.checks.slice() : []
       let matchedTime = nowIso()
       for (let i = checks.length - 1; i >= 0; i--) {
@@ -299,7 +311,7 @@ function AttendanceView({ session }) {
     closeCheckAndScheduleNext()
   }
 
-  function punchIn() {
+  async function punchIn() {
     setError('')
     prepareNotifyAudio()
     const existing = readAttendanceRecord(session.id, date) ||
@@ -309,7 +321,7 @@ function AttendanceView({ session }) {
       return
     }
     const at = nowIso()
-    mutateAttendance((a) => {
+    const next = await mutateAttendance((a) => {
       let nextRecord = { ...a, punchIn: at, punchOut: null }
       return appendAttendanceEvent(nextRecord, {
         type: 'PUNCH_IN',
@@ -318,9 +330,10 @@ function AttendanceView({ session }) {
         detail: 'Work session started',
       })
     })
+    if (next) void notifyPunch(session.id, session.name, 'in')
   }
 
-  function punchOut() {
+  async function punchOut() {
     setError('')
     const tasks = punchOutTasks.trim()
     if (tasks.length < 1) {
@@ -341,7 +354,7 @@ function AttendanceView({ session }) {
     if (plan) detailParts.push(`Plan for tomorrow: ${plan}`)
     if (blocker) detailParts.push(`Blockers: ${blocker}`)
 
-    const next = mutateAttendance((a) => {
+    const next = await mutateAttendance((a) => {
       let nextRecord = {
         ...a,
         punchOut: at,
@@ -356,8 +369,37 @@ function AttendanceView({ session }) {
         detail: detailParts.join('\n'),
       })
     })
-    if (!next) return
+    if (next) void notifyPunch(session.id, session.name, 'out')
   }
+
+  async function breakStart() {
+    if (!isActiveShift || onBreak) return
+    const at = nowIso()
+    await mutateAttendance((a) =>
+      appendAttendanceEvent({ ...a }, {
+        type: 'BREAK_START',
+        time: at,
+        status: 'Done',
+        detail: 'Break started',
+      }),
+    )
+  }
+
+  async function breakEnd() {
+    if (!onBreak) return
+    const at = nowIso()
+    await mutateAttendance((a) =>
+      appendAttendanceEvent({ ...a }, {
+        type: 'BREAK_END',
+        time: at,
+        status: 'Done',
+        detail: 'Break ended',
+      }),
+    )
+  }
+
+  const onBreak = isOnBreak(current)
+  const workingToday = formatDuration(computeWorkingMs(current))
 
   const liveClock = new Date(tick).toLocaleTimeString([], {
     hour: '2-digit',
@@ -383,6 +425,8 @@ function AttendanceView({ session }) {
           </div>
           <div className="row rowKeep">
             <span className="pill">Live clock: {liveClock}</span>
+            <span className="pill">Working: {workingToday}</span>
+            {onBreak ? <span className="pill scoreAmber">On break</span> : null}
             <ScoreBadge checks={current.checks} />
           </div>
         </div>
@@ -395,7 +439,7 @@ function AttendanceView({ session }) {
                     <div className="label">Punch In</div>
                     <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>{fmtTime(current.punchIn)}</div>
                   </div>
-                  <button className="btn btnPrimary" onClick={punchIn} disabled={isActiveShift}>
+                  <button className="btn btnPrimary" onClick={punchIn} disabled={isActiveShift || busy}>
                     Punch In
                   </button>
                 </div>
@@ -409,13 +453,24 @@ function AttendanceView({ session }) {
                     <div className="label">Punch Out</div>
                     <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>{fmtTime(current.punchOut)}</div>
                   </div>
-                  <button className="btn btnDanger" onClick={punchOut} disabled={!isActiveShift}>
+                  <button className="btn btnDanger" onClick={punchOut} disabled={!isActiveShift || busy}>
                     Punch Out
                   </button>
                 </div>
               </div>
             </div>
           </div>
+
+          {isActiveShift ? (
+            <div className="row rowKeep" style={{ marginTop: 14, gap: 8 }}>
+              <button type="button" className="btn" disabled={onBreak || busy} onClick={breakStart}>
+                Break Start
+              </button>
+              <button type="button" className="btn btnPrimary" disabled={!onBreak || busy} onClick={breakEnd}>
+                Break End
+              </button>
+            </div>
+          ) : null}
 
           <div style={{ marginTop: 18 }} className="card">
             <div className="cardHeader">
@@ -476,24 +531,33 @@ function LeavesView({ session }) {
     [db, session.id, version],
   )
 
-  function apply() {
+  const [submitting, setSubmitting] = useState(false)
+
+  async function apply() {
     setError('')
     if (!reason.trim()) {
       setError('Reason is required.')
       return
     }
-    addLeave({
-      id: `L-${Date.now()}`,
-      empId: session.id,
-      empName: session.name,
-      type,
-      from,
-      to,
-      reason: reason.trim(),
-      status: 'PENDING',
-      appliedAt: nowIso(),
-    })
-    setReason('')
+    setSubmitting(true)
+    try {
+      await addLeave({
+        id: `L-${Date.now()}`,
+        empId: session.id,
+        empName: session.name,
+        type,
+        from,
+        to,
+        reason: reason.trim(),
+        status: 'PENDING',
+        appliedAt: nowIso(),
+      })
+      setReason('')
+    } catch (err) {
+      setError(err?.message || 'Could not submit leave.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -533,8 +597,8 @@ function LeavesView({ session }) {
               />
             </div>
             <div className="row" style={{ gridColumn: '1 / -1', justifyContent: 'space-between' }}>
-              <button className="btn btnPrimary" onClick={apply}>
-                Submit leave request
+              <button className="btn btnPrimary" onClick={apply} disabled={submitting}>
+                {submitting ? 'Submitting…' : 'Submit leave request'}
               </button>
               {error ? <span style={{ color: '#ef4444', fontSize: 13 }}>{error}</span> : null}
             </div>
@@ -597,9 +661,12 @@ export function EmployeePortal() {
       subtitle={`${session.name} · ${session.id} · ${session.role}`}
       actions={<EmployeeNav />}
     >
+      <EmployeeImportantMessageModal session={session} />
       <Routes>
         <Route path="/" element={<AttendanceView session={session} />} />
         <Route path="/leaves" element={<LeavesView session={session} />} />
+        <Route path="/history" element={<EmployeeHistoryView session={session} />} />
+        <Route path="/messages" element={<EmployeeMessagesView session={session} />} />
         <Route path="/profile" element={<EmployeeProfileView session={session} />} />
         <Route path="*" element={<Navigate to="/employee" replace />} />
       </Routes>

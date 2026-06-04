@@ -62,8 +62,8 @@ export function PortalBootstrap({ children }) {
   return (
     <>
       {mode === 'cloud' ? (
-        <div className="cloudBadge" title="Saved on device + synced to Supabase">
-          Saved here + cloud sync
+        <div className="cloudBadge" title="Data loaded from Supabase — same on all devices">
+          Cloud sync active
         </div>
       ) : null}
       {children}

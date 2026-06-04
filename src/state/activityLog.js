@@ -82,6 +82,10 @@ function eventLabel(type) {
       return 'Punch In'
     case 'PUNCH_OUT':
       return 'Punch Out'
+    case 'BREAK_START':
+      return 'Break Start'
+    case 'BREAK_END':
+      return 'Break End'
     case 'WFH_CHECK':
       return 'WFH Activity Check'
     default:
