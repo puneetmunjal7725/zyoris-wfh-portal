@@ -52,10 +52,15 @@ function loadLocalDb() {
   }
 }
 
+let lastSavedDbJson = null
+
 function saveLocalDb(db) {
+  const json = JSON.stringify(db)
+  if (json === lastSavedDbJson) return
+  lastSavedDbJson = json
   dbCache = db
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(db))
+    localStorage.setItem(LS_KEY, json)
   } catch {
     /* quota */
   }

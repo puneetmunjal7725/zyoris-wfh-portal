@@ -18,7 +18,8 @@ import {
   updateLeave,
   writeSession,
 } from '../state/storage.js'
-import { buildDayActivityLog } from '../state/activityLog.js'
+import { buildMergedActivityRows } from '../state/activityLog.js'
+import { ShiftActivityBlock } from '../ui/ShiftActivityBlock.jsx'
 import { ScoreBadge } from '../ui/ScoreBadge.jsx'
 import { EmployeeProfileEditor } from '../ui/EmployeeProfileEditor.jsx'
 import { RoleInput } from '../ui/RoleInput.jsx'
@@ -71,23 +72,13 @@ function Overview() {
 
   useEffect(() => {
     if (getDbMode() !== 'cloud') return undefined
-    let cancelled = false
-    const pull = () => {
-      void refreshFromCloud().finally(() => {
-        if (!cancelled) setRefreshing(false)
-      })
-    }
-    pull()
-    const timer = window.setInterval(pull, 12000)
     const onVisible = () => {
-      if (document.visibilityState === 'visible') pull()
+      if (document.visibilityState === 'visible') {
+        void refreshFromCloud()
+      }
     }
     document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', onVisible)
-    }
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
   const { employees, todayAttendance, punchIns, byEmp, activityRows } = useMemo(() => {
@@ -97,19 +88,12 @@ function Overview() {
     const byEmp = new Map()
     for (const a of todayAttendance) byEmp.set(a.empId, a)
     const activityRows = todayAttendance
-      .flatMap((a) =>
-        buildDayActivityLog(a).map((e) => ({
-          key: `${a.empId}-${e.id}`,
-          empId: a.empId,
-          empName: a.empName,
-          date: e.date || a.date,
-          time: e.time,
-          label: e.label,
-          status: e.status,
-          detail: e.detail,
-        })),
-      )
-      .sort((x, y) => (x.time < y.time ? 1 : -1))
+      .flatMap((a) => buildMergedActivityRows(a))
+      .sort((x, y) => {
+        const ta = x.shift?.punchIn || ''
+        const tb = y.shift?.punchIn || ''
+        return ta < tb ? 1 : -1
+      })
     return { employees, todayAttendance, punchIns, byEmp, activityRows }
   }, [db, date, version])
 
@@ -180,7 +164,7 @@ function Overview() {
         <div className="cardHeader">
           <div>
             <div className="cardHeaderTitle">WFH activity log (Today)</div>
-            <div className="cardHeaderSub">Punch in/out, tasks, and activity checks — all employees</div>
+            <div className="cardHeaderSub">One row per shift — punch in/out with activity checks inside</div>
           </div>
           <span className="pill">All employees</span>
         </div>
@@ -191,28 +175,22 @@ function Overview() {
                 <tr>
                   <th>Employee</th>
                   <th>Date</th>
-                  <th>Time</th>
-                  <th>Event</th>
-                  <th>Status</th>
-                  <th>Details</th>
+                  <th>Shift &amp; activity</th>
                 </tr>
               </thead>
               <tbody>
                 {activityRows.map((r) => (
-                    <tr key={r.key}>
-                      <td>
-                        <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>{r.empName}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text)' }}>{r.empId}</div>
-                      </td>
-                      <td>{fmtDate(r.date || r.time)}</td>
-                      <td>{fmtTime(r.time)}</td>
-                      <td style={{ fontWeight: 600, color: 'var(--text-h)' }}>{r.label}</td>
-                      <td>
-                        <span className="pill">{r.status}</span>
-                      </td>
-                      <td className="logDetail">{r.detail}</td>
-                    </tr>
-                  ))}
+                  <tr key={r.key}>
+                    <td>
+                      <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>{r.empName}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text)' }}>{r.empId}</div>
+                    </td>
+                    <td>{fmtDate(r.date)}</td>
+                    <td>
+                      <ShiftActivityBlock shift={r.shift} />
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           ) : (
@@ -220,8 +198,8 @@ function Overview() {
           )}
 
           <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text)' }}>
-            Note: Score = (responded / total) × 100. Green ≥80%, amber ≥50%, red below. Updates
-            automatically.
+            Score = (responded / total) × 100. Use &quot;Refresh from cloud&quot; on Overview for latest
+            punches. Attendance history has its own Refresh button.
           </div>
         </div>
       </div>

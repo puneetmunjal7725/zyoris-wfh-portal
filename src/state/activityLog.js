@@ -64,16 +64,50 @@ export function buildDayActivityLog(record) {
   return entries.sort((a, b) => new Date(a.time) - new Date(b.time))
 }
 
+/** One merged shift per day — punch in/out together, WFH checks nested inside. */
+export function buildShiftActivityItems(record) {
+  if (!record) return []
+
+  const log = buildDayActivityLog(record)
+  const punchInTime = record.punchIn || log.find((e) => e.type === 'PUNCH_IN')?.time
+  const punchOutTime = record.punchOut || log.find((e) => e.type === 'PUNCH_OUT')?.time
+  const punchOutEntry = log.find((e) => e.type === 'PUNCH_OUT')
+
+  const checks = log.filter((e) => e.type === 'WFH_CHECK')
+  const breaks = log.filter((e) => e.type === 'BREAK_START' || e.type === 'BREAK_END')
+
+  if (!punchInTime && !punchOutTime && !checks.length) return []
+
+  return [
+    {
+      id: `shift-${record.empId}-${record.date}`,
+      label: 'Work shift',
+      punchIn: punchInTime,
+      punchOut: punchOutTime,
+      status: punchOutTime ? 'Completed' : punchInTime ? 'Active' : '—',
+      checks,
+      breaks,
+      detail: punchOutEntry?.detail || '',
+    },
+  ]
+}
+
+/** Admin overview: one display row per employee shift (not separate punch rows). */
+export function buildMergedActivityRows(record) {
+  return buildShiftActivityItems(record).map((shift) => ({
+    key: shift.id,
+    empId: record.empId,
+    empName: record.empName,
+    date: record.date,
+    shift,
+  }))
+}
+
 export function buildEmployeeActivityHistory(empId, { limitDays = 90 } = {}) {
   const records = listAttendanceForEmployee(empId).slice(0, limitDays)
   return records
-    .flatMap((record) =>
-      buildDayActivityLog(record).map((e) => ({
-        ...e,
-        date: e.date || record.date,
-      })),
-    )
-    .sort((a, b) => new Date(b.time) - new Date(a.time))
+    .flatMap((record) => buildShiftActivityItems(record))
+    .sort((a, b) => new Date(b.punchIn || 0) - new Date(a.punchIn || 0))
 }
 
 function eventLabel(type) {

@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePortalDb } from '../state/portalDb.js'
-import { ensureDbSeeded, queryAttendanceHistory, todayStr } from '../state/storage.js'
-import { attendanceSummaryRows, formatDuration } from '../utils/attendanceCalc.js'
+import { ensureDbSeeded, queryAttendanceHistory, refreshFromCloud, todayStr } from '../state/storage.js'
+import { buildShiftActivityItems } from '../state/activityLog.js'
+import { attendanceSummaryRows, filterAttendanceByRange, formatDuration } from '../utils/attendanceCalc.js'
 import { downloadCsv, downloadExcel } from '../utils/exportTable.js'
 import { fmtDate, fmtTime } from '../utils/format.js'
+import { ShiftActivityBlock } from '../ui/ShiftActivityBlock.jsx'
 import { TableWrap } from '../ui/TableWrap.jsx'
 
 const EXPORT_HEADERS = [
@@ -22,6 +24,15 @@ function daysAgo(n) {
   return todayStr(d)
 }
 
+function recordsToRows(records) {
+  return attendanceSummaryRows(records).map((r) => ({
+    ...r,
+    activityItems: buildShiftActivityItems(
+      records.find((rec) => rec.empId === r.empId && rec.date === r.date),
+    ),
+  }))
+}
+
 export function AdminAttendanceHistory() {
   const { db, version } = usePortalDb()
   const employees = useMemo(() => ensureDbSeeded().employees, [db, version])
@@ -31,24 +42,40 @@ export function AdminAttendanceHistory() {
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const filterKey = `${from}|${to}|${empFilter}`
+  const skipVersionSync = useRef(true)
+
+  const applyLocalRows = useCallback(() => {
+    const records = filterAttendanceByRange(ensureDbSeeded().attendance, from, to, empFilter || null)
+    setRows(recordsToRows(records))
+  }, [from, to, empFilter])
+
+  const loadFromCloud = useCallback(async () => {
+    setLoading(true)
+    try {
+      const records = await queryAttendanceHistory({
+        fromDate: from,
+        toDate: to,
+        empId: empFilter || null,
+      })
+      setRows(recordsToRows(records))
+    } finally {
+      setLoading(false)
+    }
+  }, [from, to, empFilter])
 
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    void queryAttendanceHistory({
-      fromDate: from,
-      toDate: to,
-      empId: empFilter || null,
-    }).then((records) => {
-      if (!cancelled) {
-        setRows(attendanceSummaryRows(records))
-        setLoading(false)
-      }
+    skipVersionSync.current = true
+    void loadFromCloud().then(() => {
+      skipVersionSync.current = false
     })
-    return () => {
-      cancelled = true
-    }
-  }, [from, to, empFilter, version])
+  }, [filterKey, loadFromCloud])
+
+  useEffect(() => {
+    if (skipVersionSync.current || loading) return
+    applyLocalRows()
+  }, [version, applyLocalRows, loading])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -69,12 +96,27 @@ export function AdminAttendanceHistory() {
     punchOut: r.punchOut ? fmtTime(r.punchOut) : '—',
   }))
 
+  async function handleRefresh() {
+    setRefreshing(true)
+    try {
+      await refreshFromCloud()
+      await loadFromCloud()
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   return (
     <div className="container">
       <div className="card" style={{ marginBottom: 14 }}>
         <div className="cardHeader">
           <div className="cardHeaderTitle">Attendance history</div>
-          <span className="pill">Up to 3 months</span>
+          <div className="row rowKeep" style={{ gap: 8 }}>
+            <span className="pill">Up to 3 months</span>
+            <button type="button" className="btn" disabled={refreshing || loading} onClick={() => void handleRefresh()}>
+              {refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
         </div>
         <div className="cardBody">
           <div className="grid2">
@@ -124,7 +166,7 @@ export function AdminAttendanceHistory() {
       <div className="card">
         <div className="cardBody">
           {loading ? (
-            <div style={{ fontSize: 13, color: 'var(--text)' }}>Loading from cloud…</div>
+            <div style={{ fontSize: 13, color: 'var(--text)' }}>Loading attendance…</div>
           ) : filtered.length ? (
             <TableWrap>
               <table className="table">
@@ -136,6 +178,7 @@ export function AdminAttendanceHistory() {
                     <th>Punch out</th>
                     <th>Hours</th>
                     <th>Status</th>
+                    <th>Shift &amp; WFH activity</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -151,6 +194,13 @@ export function AdminAttendanceHistory() {
                       <td>{r.workingHours}</td>
                       <td>
                         <span className="pill">{r.status}</span>
+                      </td>
+                      <td>
+                        {r.activityItems?.length ? (
+                          r.activityItems.map((shift) => <ShiftActivityBlock key={shift.id} shift={shift} compact />)
+                        ) : (
+                          <span style={{ fontSize: 12, color: 'var(--text)' }}>—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

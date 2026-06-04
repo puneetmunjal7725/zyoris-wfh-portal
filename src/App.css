@@ -405,6 +405,103 @@
   line-height: 1.45;
 }
 
+.shiftBlock {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  max-width: 520px;
+}
+
+.shiftBlockHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.shiftBlockTitle {
+  font-weight: 650;
+  color: var(--text-h);
+  font-size: 0.9rem;
+}
+
+.shiftBlockTimes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.shiftBlockEmpty {
+  font-size: 0.82rem;
+  color: var(--text);
+  margin: 4px 0;
+}
+
+.shiftBlockFoot {
+  margin-top: 8px;
+  max-width: none;
+}
+
+.shiftActivityList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shiftActivityList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 0.82rem;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.shiftActivityTime {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  min-width: 4.5rem;
+}
+
+.shiftActivityLabel {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.shiftActivityDetail {
+  flex: 1 1 100%;
+  font-size: 0.8rem;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.shiftActivityListBreaks {
+  margin-top: 6px;
+}
+
+.shiftStack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.shiftStackDate {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-h);
+  margin-bottom: 6px;
+}
+
 .cloudBadge {
   position: fixed;
   bottom: 12px;
