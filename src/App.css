@@ -502,6 +502,16 @@
   margin-bottom: 6px;
 }
 
+.employeeMultiSelect {
+  width: 100%;
+  min-height: 10rem;
+  padding: 8px;
+}
+
+.employeeMultiSelect option {
+  padding: 6px 4px;
+}
+
 .cloudBadge {
   position: fixed;
   bottom: 12px;

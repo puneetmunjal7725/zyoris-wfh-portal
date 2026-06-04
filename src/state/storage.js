@@ -8,6 +8,7 @@ import {
   markMessageRead,
   migrateLocalDbToSupabase,
   sendAdminMessage,
+  isMessagesSchemaError,
   subscribeSupabaseRealtime,
   syncAttendanceRow,
   syncEmployeeRow,
@@ -481,8 +482,36 @@ export async function adminSendMessage({ title, body, priority, recipientEmpIds 
   }
 
   if (isSupabaseConfigured()) {
-    await sendAdminMessage({ message, recipientEmpIds })
-    await replaceFromCloud()
+    try {
+      await sendAdminMessage({ message, recipientEmpIds })
+      await replaceFromCloud()
+    } catch (err) {
+      if (isMessagesSchemaError(err)) {
+        const db = ensureDbSeeded()
+        db.messages.unshift(message)
+        for (const empId of recipientEmpIds) {
+          if (priority === 'Normal') continue
+          db.notifications.unshift({
+            id: `N-msg-${message.id}-${empId}`,
+            userKind: 'employee',
+            userId: empId,
+            type: 'ADMIN_MESSAGE',
+            title: message.title,
+            body: message.body.slice(0, 200),
+            readAt: null,
+            createdAt: message.createdAt,
+            meta: { messageId: message.id, priority },
+          })
+        }
+        saveLocalDb(db)
+        const setupErr = new Error(
+          'Messaging tables are not set up in Supabase yet. Message saved on this device only. Run supabase/migration-messages-only.sql in the SQL Editor (see banner above), then send again.',
+        )
+        setupErr.code = 'MESSAGES_SCHEMA_MISSING'
+        throw setupErr
+      }
+      throw err
+    }
   } else {
     const db = ensureDbSeeded()
     db.messages.unshift(message)

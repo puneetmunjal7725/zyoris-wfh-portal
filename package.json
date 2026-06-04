@@ -8,6 +8,10 @@
     "build": "vite build",
     "build:zyoris": "vite build --mode production && node scripts/write-htaccess.mjs",
     "package:zyoris": "npm run build:zyoris && node scripts/package-zyoris.mjs",
+    "supabase:probe": "node scripts/probe-supabase.mjs",
+    "supabase:migrate": "node scripts/run-supabase-migrations.mjs",
+    "supabase:messages": "node scripts/run-supabase-migrations.mjs migration-messages-only.sql",
+    "supabase:realtime": "node scripts/probe-realtime.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

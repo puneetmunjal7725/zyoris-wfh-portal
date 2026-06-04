@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { usePortalDb } from '../state/portalDb.js'
 import {
   adminSendMessage,
@@ -6,11 +6,18 @@ import {
   listNotifications,
   markNotificationRead,
 } from '../state/storage.js'
+import { probeMessagesTable } from '../state/supabaseSync.js'
 import { fmtDateTime } from '../utils/format.js'
+
+const MESSAGES_SQL_HINT =
+  'Open Supabase → SQL Editor → paste file supabase/migration-messages-only.sql → Run'
 
 export function AdminMessagesView() {
   const { db, version } = usePortalDb()
-  const employees = useMemo(() => ensureDbSeeded().employees, [db, version])
+  const employees = useMemo(
+    () => [...ensureDbSeeded().employees].sort((a, b) => a.name.localeCompare(b.name)),
+    [db, version],
+  )
   const messages = useMemo(() => db.messages || [], [db, version])
   const notifications = useMemo(() => listNotifications('admin', 'admin'), [db, version])
 
@@ -21,12 +28,17 @@ export function AdminMessagesView() {
   const [selectedIds, setSelectedIds] = useState([])
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  const [messagesReady, setMessagesReady] = useState(null)
 
-  function toggleEmp(id) {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    )
-  }
+  useEffect(() => {
+    let cancelled = false
+    void probeMessagesTable().then((ok) => {
+      if (!cancelled) setMessagesReady(ok)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [version])
 
   async function send() {
     setMsg('')
@@ -37,7 +49,7 @@ export function AdminMessagesView() {
     const recipientEmpIds =
       scope === 'all' ? employees.map((e) => e.id) : selectedIds
     if (!recipientEmpIds.length) {
-      setMsg('Select at least one employee.')
+      setMsg('Select at least one employee from the dropdown.')
       return
     }
     setBusy(true)
@@ -50,16 +62,55 @@ export function AdminMessagesView() {
       })
       setTitle('')
       setBody('')
-      setMsg('Message sent to cloud — all devices will receive it.')
+      setSelectedIds([])
+      setMsg('Message sent — all selected employees will see it on every device.')
+      setMessagesReady(true)
     } catch (err) {
+      if (err?.code === 'MESSAGES_SCHEMA_MISSING') {
+        setMessagesReady(false)
+      }
       setMsg(err?.message || 'Send failed')
     } finally {
       setBusy(false)
     }
   }
 
+  function onEmployeeSelectChange(e) {
+    const ids = [...e.target.selectedOptions].map((o) => o.value)
+    setSelectedIds(ids)
+  }
+
   return (
     <div className="container">
+      {messagesReady === false ? (
+        <div className="card" style={{ marginBottom: 14, borderColor: 'rgba(239, 68, 68, 0.45)' }}>
+          <div className="cardBody">
+            <p className="formError" style={{ margin: '0 0 8px' }}>
+              Messaging tables missing in Supabase — that is why send fails.
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--text)', margin: '0 0 10px' }}>
+              {MESSAGES_SQL_HINT}
+            </p>
+            <a
+              className="btn btnPrimary"
+              href="https://supabase.com/dashboard/project/qbtzjpcdutjnjhpqqfwr/sql/new"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open SQL Editor
+            </a>
+            <button
+              type="button"
+              className="btn"
+              style={{ marginLeft: 8 }}
+              onClick={() => void probeMessagesTable().then(setMessagesReady)}
+            >
+              Check again
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="card" style={{ marginBottom: 14 }}>
         <div className="cardHeader">
           <div className="cardHeaderTitle">Send message</div>
@@ -90,25 +141,49 @@ export function AdminMessagesView() {
               </select>
             </div>
           </div>
+
           {scope === 'selected' ? (
-            <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {employees.map((e) => (
-                <label key={e.id} className="pill" style={{ cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(e.id)}
-                    onChange={() => toggleEmp(e.id)}
-                    style={{ marginRight: 6 }}
-                  />
-                  {e.name}
-                </label>
-              ))}
+            <div style={{ marginTop: 14 }}>
+              <div className="label">Employees (hold Ctrl / Cmd to select multiple)</div>
+              <select
+                className="select employeeMultiSelect"
+                multiple
+                size={Math.min(10, Math.max(4, employees.length))}
+                value={selectedIds}
+                onChange={onEmployeeSelectChange}
+              >
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name} ({e.id})
+                  </option>
+                ))}
+              </select>
+              {selectedIds.length ? (
+                <p style={{ marginTop: 8, fontSize: 13, color: 'var(--text)' }}>
+                  Selected: {selectedIds.length} employee{selectedIds.length === 1 ? '' : 's'}
+                </p>
+              ) : (
+                <p style={{ marginTop: 8, fontSize: 13, color: 'var(--text)' }}>
+                  Choose one or more employees from the list above.
+                </p>
+              )}
             </div>
           ) : null}
+
           <button type="button" className="btn btnPrimary" style={{ marginTop: 14 }} disabled={busy} onClick={send}>
             Send message
           </button>
-          {msg ? <p style={{ marginTop: 10, fontSize: 13, color: 'var(--text-h)' }}>{msg}</p> : null}
+          {msg ? (
+            <p
+              style={{
+                marginTop: 10,
+                fontSize: 13,
+                color: msg.includes('saved on this device') ? '#f59e0b' : 'var(--text-h)',
+              }}
+            >
+              {msg}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -146,7 +221,7 @@ export function AdminMessagesView() {
                   <div style={{ fontWeight: 650 }}>{m.title}</div>
                   <span className="pill">{m.priority}</span>
                   <span className="pill">{m.recipients?.length || 0} recipients</span>
-                  <p style={{ fontSize: 13, marginTop: 8 }}>{m.body.slice(0, 120)}…</p>
+                  <p style={{ fontSize: 13, marginTop: 8 }}>{m.body.slice(0, 120)}{m.body.length > 120 ? '…' : ''}</p>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDateTime(m.createdAt)}</div>
                   {(m.replies || []).length ? (
                     <div style={{ marginTop: 8, fontSize: 13 }}>

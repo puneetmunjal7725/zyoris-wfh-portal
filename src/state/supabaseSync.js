@@ -133,6 +133,18 @@ function notificationToRow(n) {
   }
 }
 
+export function isMessagesSchemaError(error) {
+  const msg = String(error?.message || error || '')
+  return /messages.*schema cache|relation.*messages|does not exist|not find the table/i.test(msg)
+}
+
+/** True when messages table is visible to the API (real select, not HEAD). */
+export async function probeMessagesTable() {
+  if (!supabase) return false
+  const { error } = await supabase.from('messages').select('id').limit(1)
+  return !error
+}
+
 export function emptyCloudDb() {
   return {
     employees: [],
