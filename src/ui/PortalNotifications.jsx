@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { usePortalDb } from '../state/portalDb.js'
 import {
+  employeeMarkMessageRead,
   listMessagesForEmployee,
+  listNotifications,
+  markNotificationRead,
   readSession,
   unreadMessageCount,
   unreadNotificationCount,
@@ -45,7 +48,8 @@ export function AdminMessageAlert() {
 
 export function EmployeeImportantMessageModal({ session }) {
   const { db, version } = usePortalDb()
-  const [shown, setShown] = useState(null)
+  const [openMessageId, setOpenMessageId] = useState(null)
+  const [busy, setBusy] = useState(false)
 
   const urgent = useMemo(() => {
     if (!session?.id) return null
@@ -58,16 +62,42 @@ export function EmployeeImportantMessageModal({ session }) {
   }, [session?.id, db, version])
 
   useEffect(() => {
-    if (urgent && urgent.id !== shown) {
-      setShown(urgent.id)
-      import('../utils/notifySound.js').then(({ playActivityCheckBell }) => playActivityCheckBell())
+    if (!urgent?.id) {
+      setOpenMessageId(null)
+      return
     }
-  }, [urgent, shown])
+    setOpenMessageId(urgent.id)
+    import('../utils/notifySound.js').then(({ playActivityCheckBell }) => playActivityCheckBell())
+  }, [urgent?.id])
 
-  if (!urgent || shown !== urgent.id) return null
+  async function dismissPopup() {
+    if (!urgent || busy) return
+    setBusy(true)
+    setOpenMessageId(null)
+    try {
+      await employeeMarkMessageRead(urgent.id, session.id)
+      const notifs = listNotifications('employee', session.id)
+      for (const n of notifs) {
+        if (n.meta?.messageId === urgent.id && !n.readAt) {
+          await markNotificationRead(n.id)
+        }
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!urgent || openMessageId !== urgent.id) return null
 
   return (
-    <div className="modalOverlay" role="dialog" aria-modal="true">
+    <div
+      className="modalOverlay"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy) void dismissPopup()
+      }}
+    >
       <div className="modal modalAlert">
         <div className="cardHeader">
           <div>
@@ -79,10 +109,14 @@ export function EmployeeImportantMessageModal({ session }) {
           <h3 style={{ margin: '0 0 10px', color: 'var(--text-h)' }}>{urgent.title}</h3>
           <p style={{ whiteSpace: 'pre-wrap', fontSize: 14, color: 'var(--text)' }}>{urgent.body}</p>
           <div className="row rowKeep" style={{ marginTop: 16, gap: 10 }}>
-            <NavLink className="btn btnPrimary" to="/employee/messages" onClick={() => setShown(null)}>
+            <NavLink
+              className="btn btnPrimary"
+              to="/employee/messages"
+              onClick={() => void dismissPopup()}
+            >
               Go To Message
             </NavLink>
-            <button type="button" className="btn" onClick={() => setShown(null)}>
+            <button type="button" className="btn" disabled={busy} onClick={() => void dismissPopup()}>
               Close
             </button>
           </div>
