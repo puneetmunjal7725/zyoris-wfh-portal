@@ -1,3 +1,4 @@
+import { DEFAULT_EMPLOYEE_PASSWORD } from '../config/portal.js'
 import { isSupabaseConfigured } from '../lib/supabase.js'
 import { normalizeDateStr } from '../utils/date.js'
 import {
@@ -378,6 +379,7 @@ export async function updateLeave(leaveId, updater) {
 
 export function defaultEmployeeFields(overrides = {}) {
   return {
+    password: DEFAULT_EMPLOYEE_PASSWORD,
     email: '',
     address: '',
     compensation: '',
@@ -385,6 +387,26 @@ export function defaultEmployeeFields(overrides = {}) {
     photo: '',
     ...overrides,
   }
+}
+
+/** Set every employee password to the portal default and sync to cloud. */
+export async function resetAllEmployeePasswords(password = DEFAULT_EMPLOYEE_PASSWORD) {
+  const db = ensureDbSeeded()
+  if (!db.employees.length) return { count: 0, password }
+
+  for (const e of db.employees) {
+    e.password = password
+  }
+  saveLocalDb(db)
+
+  if (isSupabaseConfigured()) {
+    for (const e of db.employees) {
+      await syncEmployeeRow(e)
+    }
+    await replaceFromCloud()
+  }
+
+  return { count: db.employees.length, password }
 }
 
 export function getEmployeeById(empId) {

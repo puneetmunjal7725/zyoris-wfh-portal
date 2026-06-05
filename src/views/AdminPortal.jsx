@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { usePortalDb } from '../state/portalDb.js'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { PortalShell } from '../ui/PortalShell.jsx'
+import { DEFAULT_EMPLOYEE_PASSWORD } from '../config/portal.js'
 import {
   addEmployee,
   computeScore,
@@ -14,6 +15,7 @@ import {
   pushAllLocalToCloud,
   refreshFromCloud,
   removeEmployee,
+  resetAllEmployeePasswords,
   todayStr,
   updateLeave,
   writeSession,
@@ -302,14 +304,16 @@ function Employees() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('Engineer')
-  const [password, setPassword] = useState('')
+  const [password, setPassword] = useState(DEFAULT_EMPLOYEE_PASSWORD)
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
   const [editingId, setEditingId] = useState(null)
 
   const employees = useMemo(() => db.employees, [db, version])
   const editingEmployee = editingId ? getEmployeeById(editingId) : null
 
   const [saving, setSaving] = useState(false)
+  const [resettingPw, setResettingPw] = useState(false)
 
   async function add() {
     setError('')
@@ -346,11 +350,26 @@ function Employees() {
       setId('')
       setName('')
       setEmail('')
-      setPassword('')
+      setPassword(DEFAULT_EMPLOYEE_PASSWORD)
     } catch (err) {
       setError(err?.message || 'Could not add employee.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function resetAllPasswords() {
+    if (!window.confirm(`Set password "${DEFAULT_EMPLOYEE_PASSWORD}" for all ${employees.length} employees?`)) return
+    setResettingPw(true)
+    setError('')
+    setInfo('')
+    try {
+      const { count, password: pw } = await resetAllEmployeePasswords()
+      setInfo(`Password "${pw}" set for ${count} employees (synced to cloud).`)
+    } catch (err) {
+      setError(err?.message || 'Could not reset passwords.')
+    } finally {
+      setResettingPw(false)
     }
   }
 
@@ -443,9 +462,20 @@ function Employees() {
       <div className="card">
         <div className="cardHeader">
           <div style={{ fontWeight: 650, color: 'var(--text-h)' }}>Employees</div>
-          <span className="pill">{employees.length}</span>
+          <div className="row rowKeep" style={{ gap: 8 }}>
+            <span className="pill">{employees.length}</span>
+            <button
+              type="button"
+              className="btn"
+              disabled={resettingPw || !employees.length}
+              onClick={() => void resetAllPasswords()}
+            >
+              {resettingPw ? 'Updating…' : `Set all passwords to ${DEFAULT_EMPLOYEE_PASSWORD}`}
+            </button>
+          </div>
         </div>
         <div className="cardBody">
+          {info ? <p style={{ fontSize: 13, color: 'var(--text-h)', margin: '0 0 12px' }}>{info}</p> : null}
           <table className="table">
             <thead>
               <tr>

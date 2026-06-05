@@ -269,20 +269,9 @@ export async function deleteEmployeeRemote(empId) {
 export async function syncAttendanceRow(record, { employee } = {}) {
   if (!supabase) return
 
-  if (employee) {
+  // Only sync employee when we have the full profile — never overwrite with a stub row.
+  if (employee?.id) {
     await syncEmployeeRow(employee)
-  } else {
-    await syncEmployeeRow({
-      id: record.empId,
-      name: record.empName || record.empId,
-      role: 'Employee',
-      password: record.empId,
-      email: '',
-      address: '',
-      compensation: '',
-      compensationType: 'Salary',
-      photo: '',
-    })
   }
 
   let row = attendanceToRow({ ...record, date: normalizeDateStr(record.date) })
