@@ -9,6 +9,7 @@ import {
   markMessageRead,
   migrateLocalDbToSupabase,
   sendAdminMessage,
+  deleteAdminMessageRemote,
   isMessagesSchemaError,
   subscribeSupabaseRealtime,
   syncAttendanceRow,
@@ -540,6 +541,42 @@ export async function adminSendMessage({ title, body, priority, recipientEmpIds 
     saveLocalDb(db)
   }
   return message
+}
+
+export async function adminDeleteMessage(messageId) {
+  const db = ensureDbSeeded()
+  const msg = db.messages.find((m) => m.id === messageId)
+  if (!msg) return false
+
+  if (isSupabaseConfigured()) {
+    try {
+      await deleteAdminMessageRemote(messageId, {
+        replyIds: (msg.replies || []).map((r) => r.id),
+        recipientEmpIds: (msg.recipients || []).map((r) => r.empId),
+      })
+      await replaceFromCloud()
+    } catch (err) {
+      if (isMessagesSchemaError(err)) {
+        removeMessageLocally(messageId)
+        return true
+      }
+      throw err
+    }
+  } else {
+    removeMessageLocally(messageId)
+  }
+  return true
+}
+
+function removeMessageLocally(messageId) {
+  const db = ensureDbSeeded()
+  db.messages = db.messages.filter((m) => m.id !== messageId)
+  db.notifications = db.notifications.filter((n) => {
+    if (n.meta?.messageId === messageId) return false
+    if (n.id.startsWith(`N-msg-${messageId}-`)) return false
+    return true
+  })
+  saveLocalDb(db)
 }
 
 export async function employeeMarkMessageRead(messageId, empId) {

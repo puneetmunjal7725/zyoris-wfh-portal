@@ -340,6 +340,21 @@ export async function sendAdminMessage({ message, recipientEmpIds }) {
   }
 }
 
+export async function deleteAdminMessageRemote(messageId, { replyIds = [], recipientEmpIds = [] } = {}) {
+  if (!supabase) return
+
+  const notifIds = [
+    ...recipientEmpIds.map((empId) => `N-msg-${messageId}-${empId}`),
+    ...replyIds.map((id) => `N-reply-${id}`),
+  ]
+  for (const id of notifIds) {
+    await supabase.from('notifications').delete().eq('id', id)
+  }
+
+  const { error } = await supabase.from('messages').delete().eq('id', messageId)
+  if (error && !isMessagesSchemaError(error)) throw error
+}
+
 export async function markMessageRead(messageId, empId) {
   if (!supabase) return
   await supabase

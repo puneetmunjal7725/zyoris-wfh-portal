@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { usePortalDb } from '../state/portalDb.js'
 import {
+  adminDeleteMessage,
   adminSendMessage,
   ensureDbSeeded,
   listNotifications,
@@ -28,6 +29,7 @@ export function AdminMessagesView() {
   const [selectedIds, setSelectedIds] = useState([])
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
   const [messagesReady, setMessagesReady] = useState(null)
 
   useEffect(() => {
@@ -78,6 +80,20 @@ export function AdminMessagesView() {
   function onEmployeeSelectChange(e) {
     const ids = [...e.target.selectedOptions].map((o) => o.value)
     setSelectedIds(ids)
+  }
+
+  async function removeMessage(messageId, title) {
+    if (!window.confirm(`Delete message "${title}"? Employees will no longer see it.`)) return
+    setDeletingId(messageId)
+    setMsg('')
+    try {
+      await adminDeleteMessage(messageId)
+      setMsg('Message deleted.')
+    } catch (err) {
+      setMsg(err?.message || 'Could not delete message.')
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   return (
@@ -218,7 +234,17 @@ export function AdminMessagesView() {
             messages.map((m) => (
               <div key={m.id} className="card" style={{ boxShadow: 'none', marginBottom: 10 }}>
                 <div className="cardBody" style={{ padding: 12 }}>
-                  <div style={{ fontWeight: 650 }}>{m.title}</div>
+                  <div className="row rowKeep" style={{ justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                    <div style={{ fontWeight: 650 }}>{m.title}</div>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={deletingId === m.id}
+                      onClick={() => void removeMessage(m.id, m.title)}
+                    >
+                      {deletingId === m.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
                   <span className="pill">{m.priority}</span>
                   <span className="pill">{m.recipients?.length || 0} recipients</span>
                   <p style={{ fontSize: 13, marginTop: 8 }}>{m.body.slice(0, 120)}{m.body.length > 120 ? '…' : ''}</p>
